@@ -1,4 +1,5 @@
 import type { DbClient, SqlBinding } from "../client";
+import { parseJsonColumn } from "./json";
 
 export interface NoteRow {
 	id: string;
@@ -30,8 +31,8 @@ function mapRow(row: NoteDbRow): NoteRow {
 		userId: row.user_id,
 		deckId: row.deck_id,
 		modelId: row.model_id,
-		fields: JSON.parse(row.fields) as Record<string, string>,
-		tags: JSON.parse(row.tags) as string[],
+		fields: parseJsonColumn<Record<string, string>>(row.fields, {}),
+		tags: parseJsonColumn<string[]>(row.tags, []),
 		guid: row.guid,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,

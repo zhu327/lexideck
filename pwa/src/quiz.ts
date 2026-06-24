@@ -1,4 +1,5 @@
 import { fetchQuiz, type ReviewCardView } from "./api";
+import { setText } from "./dom";
 import { errorMessage } from "./helpers";
 
 export async function renderQuiz(root: HTMLElement): Promise<void> {
@@ -56,9 +57,4 @@ function showQuizCard(area: HTMLElement, cards: ReviewCardView[], index: number)
 	if (nextBtn instanceof HTMLButtonElement) {
 		nextBtn.addEventListener("click", () => showQuizCard(area, cards, index + 1));
 	}
-}
-
-function setText(scope: HTMLElement, selector: string, text: string): void {
-	const el = scope.querySelector(selector);
-	if (el instanceof HTMLElement) el.textContent = text;
 }

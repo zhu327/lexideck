@@ -1,5 +1,6 @@
 import type { Enrichment } from "../../llm/types";
 import type { DbClient } from "../client";
+import { parseJsonColumn } from "./json";
 
 export async function saveEnrichment(
 	db: DbClient,
@@ -38,5 +39,5 @@ export async function getEnrichment(
 	if (!row) {
 		return null;
 	}
-	return JSON.parse(row.content) as Enrichment;
+	return parseJsonColumn<Enrichment | null>(row.content, null);
 }

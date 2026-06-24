@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { cardToRow, rowToCard } from "../src/srs/mapping";
-import { initNewCard, previewIntervals, scheduleReview } from "../src/srs/scheduler";
+import { initNewCard, scheduleReview } from "../src/srs/scheduler";
 import type { CardRow } from "../src/srs/types";
 
 const now = new Date("2026-01-01T00:00:00Z");
@@ -63,13 +63,6 @@ describe("scheduleReview", () => {
 		expect(next.lapses).toBe(before + 1);
 		// Due should be near-now (short relearning step, same day).
 		expect(next.due).toBeLessThanOrEqual(review.due + 86400000);
-	});
-
-	it("produces an Easy interval greater than Good, greater than Hard for a Review card", () => {
-		const review = scheduleReview(initNewCard(now), 3, now).next;
-		const iv = previewIntervals(review, new Date(review.due));
-		expect(iv[4]).toBeGreaterThan(iv[3]);
-		expect(iv[3]).toBeGreaterThan(iv[2]);
 	});
 
 	it("records a revlog entry tied to the source card", () => {

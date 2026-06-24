@@ -52,14 +52,3 @@ export function scheduleReview(
 	};
 	return { next, revlog };
 }
-
-// Preview the scheduled interval (in days) for each rating, for UI display.
-export function previewIntervals(row: CardRow, now: Date): Record<Rating, number> {
-	const repeat = f.repeat(rowToCard(row, now), now);
-	return {
-		1: repeat[1].card.scheduled_days,
-		2: repeat[2].card.scheduled_days,
-		3: repeat[3].card.scheduled_days,
-		4: repeat[4].card.scheduled_days,
-	};
-}

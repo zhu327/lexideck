@@ -1,4 +1,5 @@
 import { type Enrichment, enrichNote, fetchDue, type ReviewCardView, submitReview } from "./api";
+import { setText } from "./dom";
 import { errorMessage, RATING_LABELS, type Rating } from "./helpers";
 
 const RATINGS: Rating[] = [1, 2, 3, 4];
@@ -126,9 +127,4 @@ function displayEnrichment(el: HTMLElement, e: Enrichment): void {
 		el.appendChild(labelEl);
 		el.appendChild(textEl);
 	}
-}
-
-function setText(scope: HTMLElement, selector: string, text: string): void {
-	const el = scope.querySelector(selector);
-	if (el instanceof HTMLElement) el.textContent = text;
 }

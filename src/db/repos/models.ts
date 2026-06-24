@@ -1,4 +1,5 @@
 import type { DbClient } from "../client";
+import { parseJsonColumn } from "./json";
 
 export interface ModelRow {
 	id: string;
@@ -38,8 +39,8 @@ export async function getModel(
 	return {
 		id: row.id,
 		name: row.name,
-		fieldNames: JSON.parse(row.field_names) as string[],
-		templates: JSON.parse(row.templates) as Record<string, { Front: string; Back: string }>,
+		fieldNames: parseJsonColumn<string[]>(row.field_names, []),
+		templates: parseJsonColumn<Record<string, { Front: string; Back: string }>>(row.templates, {}),
 		css: row.css,
 	};
 }

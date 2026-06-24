@@ -1,5 +1,6 @@
 import type { CardRow } from "../../srs/types";
 import type { DbClient, SqlBinding } from "../client";
+import { parseJsonColumn } from "./json";
 
 export interface ReviewCardView {
 	cardId: string;
@@ -12,32 +13,14 @@ export interface ReviewCardView {
 	due: number;
 }
 
-function toFields(raw: unknown): Record<string, string> {
-	try {
-		const v = JSON.parse(String(raw));
-		return v && typeof v === "object" ? (v as Record<string, string>) : {};
-	} catch {
-		return {};
-	}
-}
-
-function toTags(raw: unknown): string[] {
-	try {
-		const v = JSON.parse(String(raw));
-		return Array.isArray(v) ? (v as string[]) : [];
-	} catch {
-		return [];
-	}
-}
-
 function mapRow(row: Record<string, unknown>): ReviewCardView {
 	return {
 		cardId: String(row.card_id),
 		noteId: String(row.note_id),
 		deckName: String(row.deck_name),
 		modelName: String(row.model_name),
-		fields: toFields(row.fields),
-		tags: toTags(row.tags),
+		fields: parseJsonColumn<Record<string, string>>(row.fields, {}),
+		tags: parseJsonColumn<string[]>(row.tags, []),
 		state: Number(row.state),
 		due: Number(row.due),
 	};
