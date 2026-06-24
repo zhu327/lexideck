@@ -1,7 +1,10 @@
 import { Hono } from "hono";
 import type { AuthUser } from "../auth/access";
 import type { DbClient } from "../db/client";
+import { addNoteAction } from "./actions/addNote";
+import { canAddNotesAction } from "./actions/canAddNotes";
 import { deckNamesAction } from "./actions/deckNames";
+import { findNotesAction } from "./actions/findNotes";
 import { modelFieldNamesAction } from "./actions/modelFieldNames";
 import { modelNamesAction } from "./actions/modelNames";
 import { modelStylingAction } from "./actions/modelStyling";
@@ -32,6 +35,9 @@ const ACTIONS: Record<string, ActionHandler> = {
 	modelFieldNames: modelFieldNamesAction,
 	modelTemplates: modelTemplatesAction,
 	modelStyling: modelStylingAction,
+	addNote: addNoteAction,
+	canAddNotes: canAddNotesAction,
+	findNotes: findNotesAction,
 };
 
 export function createAnkiconnectApp(deps: AnkiDeps): Hono<{ Variables: { user: AuthUser } }> {
