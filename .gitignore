@@ -1,7 +1,5 @@
 node_modules/
 dist/
-!dist/pwa/
-!dist/pwa/index.html
 .wrangler/
 .dev.vars
 .dev.vars.*

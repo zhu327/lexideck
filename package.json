@@ -7,7 +7,7 @@
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run",
 		"lint": "biome check .",
-		"build:pwa": "vite build",
+		"build:pwa": "cd pwa && vite build",
 		"deploy:dryrun": "wrangler deploy --dry-run"
 	},
 	"dependencies": {
