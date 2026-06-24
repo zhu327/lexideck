@@ -86,4 +86,13 @@ describe("ankiconnect read actions", () => {
 		expect(res.status).toBe(200);
 		expect(await res.json()).toEqual({ result: null, error: "unsupported action: bogus" });
 	});
+
+	it("returns the contract shape on a malformed (non-JSON) body", async () => {
+		const res = await app().fetch(
+			new Request("http://localhost/", { method: "POST", body: "not json" }),
+			env,
+		);
+		expect(res.status).toBe(200);
+		expect(await res.json()).toEqual({ result: null, error: "internal error" });
+	});
 });

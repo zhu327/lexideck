@@ -43,15 +43,19 @@ const ACTIONS: Record<string, ActionHandler> = {
 export function createAnkiconnectApp(deps: AnkiDeps): Hono<{ Variables: { user: AuthUser } }> {
 	const app = new Hono<{ Variables: { user: AuthUser } }>();
 	app.post("/", async (c) => {
-		const body = await c.req.json();
-		const action = String(body.action);
-		const handler = ACTIONS[action];
-		if (!handler) {
-			return c.json({ result: null, error: `unsupported action: ${action}` });
+		try {
+			const body = await c.req.json();
+			const action = String(body?.action);
+			const handler = ACTIONS[action];
+			if (!handler) {
+				return c.json({ result: null, error: `unsupported action: ${action}` });
+			}
+			const userId = c.get("user")?.userId ?? "local";
+			const r = await handler({ db: deps.db, userId, params: body.params ?? {} });
+			return c.json(r);
+		} catch {
+			return c.json({ result: null, error: "internal error" });
 		}
-		const userId = c.get("user")?.userId ?? "local";
-		const r = await handler({ db: deps.db, userId, params: body.params ?? {} });
-		return c.json(r);
 	});
 	return app;
 }

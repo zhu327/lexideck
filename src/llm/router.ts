@@ -44,7 +44,7 @@ export function createLlmApp(
 			if (e instanceof LlmRequestError) {
 				return c.json({ error: "llm upstream error" }, 502);
 			}
-			return c.json({ error: e instanceof Error ? e.message : "error" }, 500);
+			return c.json({ error: "enrichment failed" }, 500);
 		}
 	});
 

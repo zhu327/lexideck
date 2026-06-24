@@ -175,6 +175,23 @@ describe("review API", () => {
 		expect(res.status).toBe(404);
 	});
 
+	it("GET /api/review/due?limit=abc returns 200 with an array (no 500)", async () => {
+		const res = await makeApp().fetch(
+			new Request("http://localhost/api/review/due?limit=abc"),
+			env,
+		);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { cards: unknown[] };
+		expect(Array.isArray(body.cards)).toBe(true);
+	});
+
+	it("GET /api/review/due?limit=-1 returns 200 with an array (no 500)", async () => {
+		const res = await makeApp().fetch(new Request("http://localhost/api/review/due?limit=-1"), env);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { cards: unknown[] };
+		expect(Array.isArray(body.cards)).toBe(true);
+	});
+
 	it("GET /api/review/quiz returns up to limit cards", async () => {
 		await seedNote("note-q1", { fields: { Front: "1", Back: "1b" } });
 		await seedNote("note-q2", { fields: { Front: "2", Back: "2b" } });
@@ -204,6 +221,25 @@ describe("review API", () => {
 			.bind("note-fam")
 			.first<{ tags: string }>();
 		expect(JSON.parse(note?.tags ?? "[]")).toContain("known");
+	});
+
+	it("POST /api/review/familiar removes the note's card from the due queue", async () => {
+		await seedNote("note-fam-due", { fields: { Front: "FD", Back: "BD" }, tags: [] });
+		await seedCard("card-fam-due", "note-fam-due", { state: 0, due: Date.now() });
+
+		const before = await makeApp().fetch(new Request("http://localhost/api/review/due"), env);
+		const beforeBody = (await before.json()) as { cards: Array<{ cardId: string }> };
+		expect(beforeBody.cards.map((c) => c.cardId)).toContain("card-fam-due");
+
+		const res = await makeApp().fetch(
+			postJson("http://localhost/api/review/familiar", { noteId: "note-fam-due" }),
+			env,
+		);
+		expect(res.status).toBe(200);
+
+		const after = await makeApp().fetch(new Request("http://localhost/api/review/due"), env);
+		const afterBody = (await after.json()) as { cards: Array<{ cardId: string }> };
+		expect(afterBody.cards.map((c) => c.cardId)).not.toContain("card-fam-due");
 	});
 
 	it("POST /api/review/familiar with unknown noteId returns 404", async () => {

@@ -107,6 +107,20 @@ describe("POST /api/notes/:id/enrich", () => {
 		expect(await res.json()).toEqual({ error: "llm upstream error" });
 	});
 
+	it("returns 500 with a generic message (no internal details) on a non-LLM error", async () => {
+		const throwingEnrich: NonNullable<LlmDeps["enrich"]> = async () => {
+			throw new Error("internal raw fragment");
+		};
+		const res = await app(throwingEnrich).fetch(
+			new Request(`http://localhost/api/notes/${NOTE_ID}/enrich`, { method: "POST" }),
+			configuredEnv,
+		);
+		expect(res.status).toBe(500);
+		const text = await res.text();
+		expect(text).not.toContain("internal raw fragment");
+		expect(JSON.parse(text)).toEqual({ error: "enrichment failed" });
+	});
+
 	it("upserts on re-enrich: one row, latest content wins", async () => {
 		const first: Enrichment = {
 			exampleSentence: "first-e",

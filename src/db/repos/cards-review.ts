@@ -56,7 +56,11 @@ export async function listDueCards(
 	userId: string,
 	opts: { deckName?: string; limit: number; now: number },
 ): Promise<ReviewCardView[]> {
-	const where = ["c.user_id = ?", "(c.state = 0 OR c.due <= ?)"];
+	const where = [
+		"c.user_id = ?",
+		"(c.state = 0 OR c.due <= ?)",
+		"NOT EXISTS (SELECT 1 FROM json_each(n.tags) WHERE json_each.value = 'known')",
+	];
 	const params: SqlBinding[] = [userId, opts.now];
 	if (opts.deckName) {
 		where.push("d.name = ?");
