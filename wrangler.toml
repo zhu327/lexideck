@@ -1,24 +1,38 @@
+# ──────────────────────────────────────────────────────────
+# Anki Vocab — Cloudflare Workers 配置 (示例)
+# 复制此文件为 wrangler.toml 并填入你自己的值
+# ⚠️ wrangler.toml 包含敏感信息，已在 .gitignore 中排除
+# ──────────────────────────────────────────────────────────
+
 name = "anki-app"
 main = "src/index.ts"
 compatibility_date = "2024-11-01"
 
+# PWA 静态资源 (构建产物)
 [assets]
 directory = "./dist/pwa"
 
+# D1 数据库绑定
+# 创建方式: wrangler d1 create anki-app → 将返回的 database_id 填入下方
 [[d1_databases]]
 binding = "DB"
 database_name = "anki-app"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 migrations_dir = "migrations"
 
-[[kv_namespaces]]
-binding = "CONFIG"
-id = "00000000000000000000000000000000"
-
-[[r2_buckets]]
-binding = "MEDIA"
-bucket_name = "anki-media"
-
+# ── 环境变量 ──────────────────────────────────────────────
 [vars]
-CF_ACCESS_TEAM_DOMAIN = ""
-CF_ACCESS_AUD = ""
+# LLM 配置 (兼容 OpenAI chat/completions 接口的任意服务)
+# 示例使用 Cloudflare Workers AI，也可替换为 OpenAI / DeepSeek / Ollama 等
+LLM_BASE_URL = "https://api.cloudflare.com/client/v4/accounts/<ACCOUNT_ID>/ai/v1"
+LLM_MODEL = "@cf/qwen/qwen3-30b-a3b-fp8"
+LLM_API_KEY = "your-llm-api-key"
+
+# API 鉴权密钥 — PWA 与 Yomitan 均使用此 key 访问后端
+# 自行生成一个随机字符串，例如: openssl rand -hex 24
+ANKICONNECT_API_KEY = "your-api-key-here"
+
+# ── 可选参数 (有默认值，按需覆盖) ──────────────────────────
+# NEW_CARDS_PER_DAY = "20"      # 每日新卡上限
+# REVIEWS_PER_DAY = "100"       # 每日复习上限
+# TIMEZONE = "+8"               # 时区偏移 (小时)，用于每日重置计算

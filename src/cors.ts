@@ -8,7 +8,7 @@ import type { Env } from "./env";
 const CORS_HEADERS: Record<string, string> = {
 	"Access-Control-Allow-Origin": "*",
 	"Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-	"Access-Control-Allow-Headers": "Content-Type, Authorization, Cf-Access-Jwt-Assertion",
+	"Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
 export function corsMiddleware(): MiddlewareHandler<{ Bindings: Env }> {

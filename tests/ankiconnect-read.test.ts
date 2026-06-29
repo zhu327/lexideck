@@ -2,41 +2,54 @@ import { env } from "cloudflare:workers";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { createAnkiconnectApp } from "../src/ankiconnect/router";
-import { type AuthUser, accessAuthMiddleware } from "../src/auth/access";
+import { type AuthUser, apiKeyAuth } from "../src/auth/apiKey";
 import { createDbClient } from "../src/db/client";
 import type { Env } from "../src/env";
 
 function app() {
 	const a = new Hono<{ Bindings: Env; Variables: { user: AuthUser } }>();
-	a.use("*", accessAuthMiddleware()); // DEV=1 -> local user
+	a.use("*", apiKeyAuth()); // DEV=1 -> local user
 	a.route("/", createAnkiconnectApp({ db: createDbClient(env.DB) }));
 	return a;
 }
 
-async function post(action: string, params: unknown = {}) {
+async function post(action: string, params: unknown = {}, version = 6) {
 	return app().fetch(
 		new Request("http://localhost/", {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ action, version: 6, params }),
+			body: JSON.stringify({ action, version, params }),
 		}),
 		env,
 	);
 }
 
 describe("ankiconnect read actions", () => {
-	it("version returns 6", async () => {
+	it("version returns 6 (v6)", async () => {
 		const res = await post("version");
 		expect(res.status).toBe(200);
 		expect(await res.json()).toEqual({ result: 6, error: null });
 	});
 
-	it("deckNames contains Default", async () => {
+	it("version returns bare 6 (v2)", async () => {
+		const res = await post("version", {}, 2);
+		expect(res.status).toBe(200);
+		expect(await res.json()).toBe(6);
+	});
+
+	it("deckNames contains Default (v6)", async () => {
 		const res = await post("deckNames");
 		expect(res.status).toBe(200);
 		const body = (await res.json()) as { result: string[]; error: null };
 		expect(body.error).toBeNull();
 		expect(body.result).toEqual(expect.arrayContaining(["Default"]));
+	});
+
+	it("deckNames returns bare array (v2)", async () => {
+		const res = await post("deckNames", {}, 2);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as string[];
+		expect(body).toEqual(expect.arrayContaining(["Default"]));
 	});
 
 	it("modelNames contains Basic", async () => {
@@ -81,10 +94,16 @@ describe("ankiconnect read actions", () => {
 		expect(await res.json()).toEqual({ result: null, error: "model not found: Nope" });
 	});
 
-	it("unknown action returns unsupported action error", async () => {
+	it("unknown action returns unsupported action error (v6)", async () => {
 		const res = await post("bogus");
 		expect(res.status).toBe(200);
 		expect(await res.json()).toEqual({ result: null, error: "unsupported action: bogus" });
+	});
+
+	it("unknown action returns bare null (v2)", async () => {
+		const res = await post("bogus", {}, 2);
+		expect(res.status).toBe(200);
+		expect(await res.json()).toBeNull();
 	});
 
 	it("returns the contract shape on a malformed (non-JSON) body", async () => {

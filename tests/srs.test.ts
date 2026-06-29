@@ -12,6 +12,7 @@ function makeRow(overrides: Partial<CardRow> = {}): CardRow {
 		user_id: "u1",
 		deck_id: "d1",
 		template_ord: 0,
+		ankiId: null,
 		due: now.getTime(),
 		stability: 2.3065,
 		difficulty: 2.11810397,

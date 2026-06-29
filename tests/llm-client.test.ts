@@ -11,7 +11,12 @@ const API_KEY = "test-key";
 const BASE_URL = "https://api.example.com/v1";
 const MODEL = "gpt-test";
 const FULL_CONFIG: LlmConfig = { apiKey: API_KEY, baseUrl: BASE_URL, model: MODEL };
-const NOTE: NoteInput = { word: "ephemeral", fields: { Front: "ephemeral", Back: "" } };
+const NOTE: NoteInput = {
+	word: "ephemeral",
+	front: "ephemeral",
+	back: "lasting for a very short time 短暂的",
+	fields: { Front: "ephemeral", Back: "lasting for a very short time 短暂的" },
+};
 
 type FakeResponse = {
 	ok: boolean;
@@ -67,18 +72,22 @@ describe("enrichNote", () => {
 
 	it("returns enrichment and sends a well-formed chat completion request", async () => {
 		const content = JSON.stringify({
-			exampleSentence: "e",
-			extendedDefinition: "d",
-			mnemonic: "m",
+			coreMeaning: "core",
+			meaningMap: "map",
+			usageNotes: "usage",
+			memoryHooks: "hooks",
+			reviewPrompt: "prompt",
 		});
 		const { fetchImpl, calls } = createFakeFetch(okResponse(content));
 
 		const result = await enrichNote(NOTE, FULL_CONFIG, fetchImpl);
 
 		expect(result).toEqual({
-			exampleSentence: "e",
-			extendedDefinition: "d",
-			mnemonic: "m",
+			coreMeaning: "core",
+			meaningMap: "map",
+			usageNotes: "usage",
+			memoryHooks: "hooks",
+			reviewPrompt: "prompt",
 		});
 		expect(calls).toHaveLength(1);
 		expect(calls[0].input).toBe(`${BASE_URL}/chat/completions`);
@@ -93,9 +102,17 @@ describe("enrichNote", () => {
 		expect(body.model).toBe(MODEL);
 		expect(body.messages).toHaveLength(2);
 		expect(body.messages[0].role).toBe("system");
-		expect(body.messages[0].content).toContain("STRICT JSON");
+		expect(body.messages[0].content).toContain("Oxford Intermediate");
+		expect(body.messages[0].content).toContain("coreMeaning");
 		expect(body.messages[1].role).toBe("user");
-		expect(body.messages[1].content).toBe(JSON.stringify({ word: NOTE.word, fields: NOTE.fields }));
+		expect(body.messages[1].content).toBe(
+			JSON.stringify({
+				word: NOTE.word,
+				front: NOTE.front,
+				back: NOTE.back,
+				fields: NOTE.fields,
+			}),
+		);
 	});
 
 	it("throws LlmRequestError with the status on a non-2xx response", async () => {
@@ -107,17 +124,21 @@ describe("enrichNote", () => {
 
 	it("parses content wrapped in ```json fences", async () => {
 		const json = JSON.stringify({
-			exampleSentence: "e",
-			extendedDefinition: "d",
-			mnemonic: "m",
+			coreMeaning: "core",
+			meaningMap: "map",
+			usageNotes: "usage",
+			memoryHooks: "hooks",
+			reviewPrompt: "prompt",
 		});
-		const fenced = "```json\n" + json + "\n```";
+		const fenced = `\`\`\`json\n${json}\n\`\`\``;
 		const { fetchImpl } = createFakeFetch(okResponse(fenced));
 		const result = await enrichNote(NOTE, FULL_CONFIG, fetchImpl);
 		expect(result).toEqual({
-			exampleSentence: "e",
-			extendedDefinition: "d",
-			mnemonic: "m",
+			coreMeaning: "core",
+			meaningMap: "map",
+			usageNotes: "usage",
+			memoryHooks: "hooks",
+			reviewPrompt: "prompt",
 		});
 	});
 

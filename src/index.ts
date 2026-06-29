@@ -1,11 +1,14 @@
 import { Hono } from "hono";
 import { createAnkiconnectApp } from "./ankiconnect/router";
-import { type AuthUser, accessAuthMiddleware } from "./auth/access";
+import { type AuthUser, apiKeyAuth } from "./auth/apiKey";
 import { corsMiddleware } from "./cors";
 import { createDbClient } from "./db/client";
 import type { Env } from "./env";
+import { createExportApp } from "./export/router";
 import { createLlmApp } from "./llm/router";
+import { createNotesApp } from "./notes/router";
 import { createReviewApp } from "./review/router";
+import { createStatsApp } from "./stats/router";
 
 type AppEnv = { Bindings: Env; Variables: { user: AuthUser } };
 
@@ -17,7 +20,7 @@ function buildApp(env: Env): Hono<AppEnv> {
 	const app = new Hono<AppEnv>();
 
 	app.use("*", corsMiddleware());
-	app.use("*", accessAuthMiddleware());
+	app.use("/api/*", apiKeyAuth());
 
 	app.get("/api/health", async (c) => {
 		const db = createDbClient(c.env.DB);
@@ -26,8 +29,11 @@ function buildApp(env: Env): Hono<AppEnv> {
 	});
 
 	app.route("/api/review", createReviewApp({ db: createDbClient(env.DB) }));
+	app.route("/api/export", createExportApp({ db: createDbClient(env.DB) }));
+	app.route("/api", createNotesApp({ db: createDbClient(env.DB) }));
 	app.route("/api", createLlmApp({ db: createDbClient(env.DB) }));
-	app.route("/", createAnkiconnectApp({ db: createDbClient(env.DB) }));
+	app.route("/api/stats", createStatsApp({ db: createDbClient(env.DB) }));
+	app.route("/ankiconnect", createAnkiconnectApp({ db: createDbClient(env.DB) }));
 
 	return app;
 }

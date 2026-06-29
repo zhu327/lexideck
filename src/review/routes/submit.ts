@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { AuthUser } from "../../auth/access";
+import type { AuthUser } from "../../auth/apiKey";
 import type { DbClient } from "../../db/client";
 import { getCardForReview, updateCardAfterReview } from "../../db/repos/cards-review";
 import { insertRevlog } from "../../db/repos/revlog";

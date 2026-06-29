@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { Hono } from "hono";
 import { beforeEach, describe, expect, it } from "vitest";
-import { type AuthUser, accessAuthMiddleware } from "../src/auth/access";
+import { type AuthUser, apiKeyAuth } from "../src/auth/apiKey";
 import { createDbClient } from "../src/db/client";
 import { getEnrichment } from "../src/db/repos/enrichments";
 import type { Env } from "../src/env";
@@ -15,15 +15,17 @@ const MODEL = "model-basic-local";
 const FIELDS: Record<string, string> = { Front: "cat", Back: "猫" };
 
 const FIXED_ENRICHMENT: Enrichment = {
-	exampleSentence: "The cat purred on the windowsill.",
-	extendedDefinition: "A small domesticated carnivorous mammal kept as a pet.",
-	mnemonic: "CAT: Cuddly And Tiny",
+	coreMeaning: "cat 的核心义是猫这种动物",
+	meaningMap: "• noun：猫；猫科动物",
+	usageNotes: "• cat 通常是可数名词：a cat / cats",
+	memoryHooks: "想到独立、敏捷的小动物形象",
+	reviewPrompt: "看到 cat 时，先说出它是不是可数名词？",
 };
 
 // Mount the LLM app behind the auth middleware exactly like a real caller.
 function app(enrich?: LlmDeps["enrich"]) {
 	const a = new Hono<{ Bindings: Env; Variables: { user: AuthUser } }>();
-	a.use("*", accessAuthMiddleware());
+	a.use("*", apiKeyAuth());
 	a.route("/api", createLlmApp({ db: createDbClient(env.DB), enrich }));
 	return a;
 }
@@ -40,6 +42,20 @@ function stubEnrich(result: Enrichment): NonNullable<LlmDeps["enrich"]> {
 	return async () => result;
 }
 
+function captureEnrich(): {
+	calls: Parameters<NonNullable<LlmDeps["enrich"]>>[];
+	enrich: NonNullable<LlmDeps["enrich"]>;
+} {
+	const calls: Parameters<NonNullable<LlmDeps["enrich"]>>[] = [];
+	return {
+		calls,
+		enrich: async (...args) => {
+			calls.push(args);
+			return FIXED_ENRICHMENT;
+		},
+	};
+}
+
 function failingEnrich(): NonNullable<LlmDeps["enrich"]> {
 	return async () => {
 		throw new LlmRequestError(500);
@@ -48,7 +64,7 @@ function failingEnrich(): NonNullable<LlmDeps["enrich"]> {
 
 async function enrichmentRowCount(noteId: string): Promise<number> {
 	const row = await env.DB.prepare(
-		"SELECT COUNT(*) as n FROM enrichments WHERE user_id = 'local' AND note_id = ? AND kind = 'default'",
+		"SELECT COUNT(*) as n FROM enrichments WHERE user_id = 'local' AND note_id = ? AND kind = 'dictionary-v2'",
 	)
 		.bind(noteId)
 		.first<{ n: number }>();
@@ -69,9 +85,15 @@ beforeEach(async () => {
 
 describe("POST /api/notes/:id/enrich", () => {
 	it("returns 503 when LLM is not configured", async () => {
+		const noLlmEnv: Env = {
+			...env,
+			LLM_API_KEY: undefined,
+			LLM_BASE_URL: undefined,
+			LLM_MODEL: undefined,
+		};
 		const res = await app().fetch(
 			new Request(`http://localhost/api/notes/${NOTE_ID}/enrich`, { method: "POST" }),
-			env,
+			noLlmEnv,
 		);
 		expect(res.status).toBe(503);
 		expect(await res.json()).toEqual({ error: "llm not configured" });
@@ -94,8 +116,25 @@ describe("POST /api/notes/:id/enrich", () => {
 		expect(res.status).toBe(200);
 		expect(await res.json()).toEqual(FIXED_ENRICHMENT);
 
-		const stored = await getEnrichment(createDbClient(env.DB), "local", NOTE_ID, "default");
+		const stored = await getEnrichment(createDbClient(env.DB), "local", NOTE_ID, "dictionary-v2");
 		expect(stored).toEqual(FIXED_ENRICHMENT);
+	});
+
+	it("passes front and back dictionary fields to the enrichment provider", async () => {
+		const captured = captureEnrich();
+		const res = await app(captured.enrich).fetch(
+			new Request(`http://localhost/api/notes/${NOTE_ID}/enrich`, { method: "POST" }),
+			configuredEnv,
+		);
+
+		expect(res.status).toBe(200);
+		expect(captured.calls).toHaveLength(1);
+		expect(captured.calls[0][0]).toEqual({
+			word: "cat",
+			front: "cat",
+			back: "猫",
+			fields: FIELDS,
+		});
 	});
 
 	it("returns 502 on LLM upstream error", async () => {
@@ -123,14 +162,18 @@ describe("POST /api/notes/:id/enrich", () => {
 
 	it("upserts on re-enrich: one row, latest content wins", async () => {
 		const first: Enrichment = {
-			exampleSentence: "first-e",
-			extendedDefinition: "first-d",
-			mnemonic: "first-m",
+			coreMeaning: "first-core",
+			meaningMap: "first-map",
+			usageNotes: "first-usage",
+			memoryHooks: "first-hooks",
+			reviewPrompt: "first-prompt",
 		};
 		const second: Enrichment = {
-			exampleSentence: "second-e",
-			extendedDefinition: "second-d",
-			mnemonic: "second-m",
+			coreMeaning: "second-core",
+			meaningMap: "second-map",
+			usageNotes: "second-usage",
+			memoryHooks: "second-hooks",
+			reviewPrompt: "second-prompt",
 		};
 		let call = 0;
 		const stub: NonNullable<LlmDeps["enrich"]> = async () => (call++ === 0 ? first : second);
@@ -146,7 +189,7 @@ describe("POST /api/notes/:id/enrich", () => {
 
 		expect(await enrichmentRowCount(NOTE_ID)).toBe(1);
 
-		const stored = await getEnrichment(createDbClient(env.DB), "local", NOTE_ID, "default");
+		const stored = await getEnrichment(createDbClient(env.DB), "local", NOTE_ID, "dictionary-v2");
 		expect(stored).toEqual(second);
 	});
 });

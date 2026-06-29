@@ -1,4 +1,4 @@
-import { fetchDue, markFamiliar, type ReviewCardView } from "./api";
+import { type FamiliarCard, fetchFamiliarList, markFamiliar, unmarkFamiliar } from "./api";
 import { errorMessage } from "./helpers";
 
 export async function renderFamiliar(root: HTMLElement): Promise<void> {
@@ -11,7 +11,8 @@ export async function renderFamiliar(root: HTMLElement): Promise<void> {
 	if (!(list instanceof HTMLElement)) return;
 
 	try {
-		const cards = await fetchDue();
+		const selectedDeck = localStorage.getItem("selectedDeck") || null;
+		const cards = await fetchFamiliarList(selectedDeck);
 		if (cards.length === 0) {
 			list.textContent = "No notes available.";
 			return;
@@ -25,31 +26,60 @@ export async function renderFamiliar(root: HTMLElement): Promise<void> {
 	}
 }
 
-function renderFamiliarRow(card: ReviewCardView): HTMLElement {
+function renderFamiliarRow(card: FamiliarCard): HTMLElement {
 	const row = document.createElement("div");
 	row.className = "familiar-row";
 
-	const front = Object.values(card.fields)[0] ?? "";
 	const text = document.createElement("span");
 	text.className = "familiar-word";
-	text.textContent = front;
+	text.innerHTML = card.front;
 
 	const btn = document.createElement("button");
 	btn.type = "button";
 	btn.className = "secondary";
-	btn.textContent = "Mark familiar";
-	btn.addEventListener("click", async () => {
-		btn.disabled = true;
-		btn.textContent = "Marking…";
-		try {
-			await markFamiliar(card.noteId);
-			btn.textContent = "Marked";
-		} catch (err) {
-			btn.textContent = "Failed";
-			btn.title = errorMessage(err);
-			btn.disabled = false;
+
+	let currentHandler: (() => void) | null = null;
+
+	function bindButton(
+		label: string,
+		pendingLabel: string,
+		action: () => Promise<void>,
+		next: () => void,
+	) {
+		btn.textContent = label;
+		btn.disabled = false;
+		btn.title = "";
+		if (currentHandler) {
+			btn.removeEventListener("click", currentHandler);
 		}
-	});
+		currentHandler = async () => {
+			btn.disabled = true;
+			btn.textContent = pendingLabel;
+			try {
+				await action();
+				next();
+			} catch (err) {
+				btn.textContent = "Failed";
+				btn.title = errorMessage(err);
+				btn.disabled = false;
+			}
+		};
+		btn.addEventListener("click", currentHandler);
+	}
+
+	function bindMark() {
+		bindButton("Mark familiar", "Marking…", () => markFamiliar(card.noteId), bindUnmark);
+	}
+
+	function bindUnmark() {
+		bindButton("Unmark", "Unmarking…", () => unmarkFamiliar(card.noteId), bindMark);
+	}
+
+	if (card.known) {
+		bindUnmark();
+	} else {
+		bindMark();
+	}
 
 	row.appendChild(text);
 	row.appendChild(btn);

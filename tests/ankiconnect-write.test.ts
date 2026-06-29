@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { Hono } from "hono";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createAnkiconnectApp } from "../src/ankiconnect/router";
-import { type AuthUser, accessAuthMiddleware } from "../src/auth/access";
+import { type AuthUser, apiKeyAuth } from "../src/auth/apiKey";
 import { createDbClient } from "../src/db/client";
 import type { Env } from "../src/env";
 
@@ -10,7 +10,7 @@ import type { Env } from "../src/env";
 // caller. DEV=1 -> auth bypass -> local user (userId "local").
 function app() {
 	const a = new Hono<{ Bindings: Env; Variables: { user: AuthUser } }>();
-	a.use("*", accessAuthMiddleware());
+	a.use("*", apiKeyAuth());
 	a.route("/", createAnkiconnectApp({ db: createDbClient(env.DB) }));
 	return a;
 }
@@ -41,13 +41,15 @@ describe("ankiconnect write actions", () => {
 		const t0 = Date.now();
 		const res = await post("addNote", { note: note({ Front: "cat", Back: "猫" }) });
 		expect(res.status).toBe(200);
-		const body = (await res.json()) as { result: string | null; error: string | null };
+		const body = (await res.json()) as { result: number | null; error: string | null };
 		expect(body.error).toBeNull();
-		expect(typeof body.result).toBe("string");
-		const noteId = body.result as string;
+		expect(typeof body.result).toBe("number");
+		expect(body.result as number).toBeGreaterThan(0);
 
-		const card = await env.DB.prepare("SELECT state, due FROM cards WHERE note_id = ?")
-			.bind(noteId)
+		const card = await env.DB.prepare(
+			"SELECT c.state, c.due FROM cards c JOIN notes n ON n.id = c.note_id WHERE n.anki_id = ?",
+		)
+			.bind(body.result)
 			.first<{ state: number; due: number }>();
 		expect(card).not.toBeNull();
 		expect(card?.state).toBe(0);
@@ -66,9 +68,9 @@ describe("ankiconnect write actions", () => {
 			),
 		});
 		expect(res.status).toBe(200);
-		const body = (await res.json()) as { result: string | null; error: string | null };
+		const body = (await res.json()) as { result: number | null; error: string | null };
 		expect(body.error).toBeNull();
-		expect(typeof body.result).toBe("string");
+		expect(typeof body.result).toBe("number");
 	});
 
 	it("addNote unknown deck returns error containing 'deck'", async () => {
@@ -91,9 +93,9 @@ describe("ankiconnect write actions", () => {
 
 	it("addNote duplicate (default allowDuplicate:false) is rejected; allowDuplicate:true succeeds", async () => {
 		const first = await post("addNote", { note: note({ Front: "dup", Back: "d" }) });
-		const firstBody = (await first.json()) as { result: string | null; error: string | null };
+		const firstBody = (await first.json()) as { result: number | null; error: string | null };
 		expect(firstBody.error).toBeNull();
-		expect(typeof firstBody.result).toBe("string");
+		expect(typeof firstBody.result).toBe("number");
 
 		const dup = await post("addNote", { note: note({ Front: "dup", Back: "d" }) });
 		expect(await dup.json()).toEqual({ result: null, error: "duplicate" });
@@ -102,9 +104,9 @@ describe("ankiconnect write actions", () => {
 			note: note({ Front: "dup", Back: "d" }),
 			options: { allowDuplicate: true },
 		});
-		const allowBody = (await allow.json()) as { result: string | null; error: string | null };
+		const allowBody = (await allow.json()) as { result: number | null; error: string | null };
 		expect(allowBody.error).toBeNull();
-		expect(typeof allowBody.result).toBe("string");
+		expect(typeof allowBody.result).toBe("number");
 	});
 
 	it("canAddNotes returns [true, false] for one new and one duplicate note", async () => {
@@ -125,35 +127,35 @@ describe("ankiconnect write actions", () => {
 		expect(body.result).toHaveLength(2);
 	});
 
-	it("findNotes deck:Default includes the added noteId", async () => {
+	it("findNotes deck:Default includes the added note anki_id", async () => {
 		const add = await post("addNote", { note: note({ Front: "cat", Back: "猫" }) });
-		const noteId = ((await add.json()) as { result: string }).result;
+		const ankiId = ((await add.json()) as { result: number }).result;
 
 		const res = await post("findNotes", { query: "deck:Default" });
-		const body = (await res.json()) as { result: string[] };
-		expect(body.result).toContain(noteId);
+		const body = (await res.json()) as { result: number[] };
+		expect(body.result).toContain(ankiId);
 	});
 
-	it("findNotes Front:cat includes the added noteId", async () => {
+	it("findNotes Front:cat includes the added note anki_id", async () => {
 		const add = await post("addNote", { note: note({ Front: "cat", Back: "猫" }) });
-		const noteId = ((await add.json()) as { result: string }).result;
+		const ankiId = ((await add.json()) as { result: number }).result;
 
 		const res = await post("findNotes", { query: "Front:cat" });
-		const body = (await res.json()) as { result: string[] };
-		expect(body.result).toContain(noteId);
+		const body = (await res.json()) as { result: number[] };
+		expect(body.result).toContain(ankiId);
 	});
 
 	it("findNotes Front:nope returns an empty array", async () => {
 		await post("addNote", { note: note({ Front: "cat", Back: "猫" }) });
 		const res = await post("findNotes", { query: "Front:nope" });
-		const body = (await res.json()) as { result: string[] };
+		const body = (await res.json()) as { result: number[] };
 		expect(body.result).toEqual([]);
 	});
 
 	it("findNotes with a malformed query returns an empty array", async () => {
 		await post("addNote", { note: note({ Front: "cat", Back: "猫" }) });
 		const res = await post("findNotes", { query: "gibberish" });
-		const body = (await res.json()) as { result: string[] };
+		const body = (await res.json()) as { result: number[] };
 		expect(body.result).toEqual([]);
 	});
 });

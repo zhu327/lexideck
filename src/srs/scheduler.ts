@@ -16,6 +16,7 @@ export function initNewCard(now: Date): CardRow {
 		user_id: "",
 		deck_id: "",
 		template_ord: 0,
+		ankiId: null,
 		due: 0,
 		stability: 0,
 		difficulty: 0,

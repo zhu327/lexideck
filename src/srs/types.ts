@@ -10,6 +10,7 @@ export interface CardRow {
 	user_id: string;
 	deck_id: string;
 	template_ord: number;
+	ankiId: number | null;
 	due: number;
 	stability: number;
 	difficulty: number;

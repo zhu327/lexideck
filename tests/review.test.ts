@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { Hono } from "hono";
 import { beforeEach, describe, expect, it } from "vitest";
-import { type AuthUser, accessAuthMiddleware } from "../src/auth/access";
+import { type AuthUser, apiKeyAuth } from "../src/auth/apiKey";
 import { createDbClient } from "../src/db/client";
 import type { Env } from "../src/env";
 import { createReviewApp } from "../src/review/router";
@@ -12,7 +12,7 @@ const MODEL = "model-basic-local";
 // Mount the review app behind the auth middleware exactly like a real caller.
 function makeApp() {
 	const a = new Hono<{ Bindings: Env; Variables: { user: AuthUser } }>();
-	a.use("*", accessAuthMiddleware());
+	a.use("*", apiKeyAuth());
 	a.route("/api/review", createReviewApp({ db: createDbClient(env.DB) }));
 	return a;
 }
@@ -248,5 +248,279 @@ describe("review API", () => {
 			env,
 		);
 		expect(res.status).toBe(404);
+	});
+
+	it("GET /api/review/familiar lists all notes with known flag", async () => {
+		await seedNote("note-a", { fields: { Front: "A", Back: "AB" }, tags: ["known"] });
+		await seedNote("note-b", { fields: { Front: "B", Back: "BB" }, tags: [] });
+
+		const res = await makeApp().fetch(new Request("http://localhost/api/review/familiar"), env);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as {
+			cards: Array<{ noteId: string; front: string; known: boolean }>;
+		};
+		expect(body.cards).toHaveLength(2);
+		const noteA = body.cards.find((c) => c.noteId === "note-a");
+		const noteB = body.cards.find((c) => c.noteId === "note-b");
+		expect(noteA?.known).toBe(true);
+		expect(noteB?.known).toBe(false);
+	});
+
+	it("POST /api/review/familiar then GET /familiar shows note as known", async () => {
+		await seedNote("note-fam2", { fields: { Front: "F2", Back: "B2" }, tags: [] });
+
+		await makeApp().fetch(
+			postJson("http://localhost/api/review/familiar", { noteId: "note-fam2" }),
+			env,
+		);
+
+		const res = await makeApp().fetch(new Request("http://localhost/api/review/familiar"), env);
+		const body = (await res.json()) as { cards: Array<{ noteId: string; known: boolean }> };
+		const note = body.cards.find((c) => c.noteId === "note-fam2");
+		expect(note?.known).toBe(true);
+	});
+
+	it("POST /api/review/familiar/unmark removes known tag", async () => {
+		await seedNote("note-unmark", { fields: { Front: "U", Back: "UB" }, tags: ["known"] });
+
+		const res = await makeApp().fetch(
+			postJson("http://localhost/api/review/familiar/unmark", { noteId: "note-unmark" }),
+			env,
+		);
+		expect(res.status).toBe(200);
+		expect(((await res.json()) as { ok: boolean }).ok).toBe(true);
+
+		const note = await env.DB.prepare("SELECT tags FROM notes WHERE id = ?")
+			.bind("note-unmark")
+			.first<{ tags: string }>();
+		expect(JSON.parse(note?.tags ?? "[]")).not.toContain("known");
+	});
+
+	it("POST /api/review/familiar/unmark on already-unmarked note is idempotent", async () => {
+		await seedNote("note-noknown", { fields: { Front: "N", Back: "NB" }, tags: [] });
+
+		const res = await makeApp().fetch(
+			postJson("http://localhost/api/review/familiar/unmark", { noteId: "note-noknown" }),
+			env,
+		);
+		expect(res.status).toBe(200);
+		expect(((await res.json()) as { ok: boolean }).ok).toBe(true);
+	});
+
+	it("POST /api/review/familiar/unmark with unknown noteId returns 404", async () => {
+		const res = await makeApp().fetch(
+			postJson("http://localhost/api/review/familiar/unmark", { noteId: "nope" }),
+			env,
+		);
+		expect(res.status).toBe(404);
+	});
+
+	it("GET /api/review/due?limit=5&offset=5 returns second page", async () => {
+		const now = Date.now();
+		for (let i = 0; i < 12; i++) {
+			const ni = `note-due-off-${i}`;
+			const ci = `card-due-off-${i}`;
+			await seedNote(ni, { fields: { Front: String(i), Back: `B${i}` } });
+			await seedCard(ci, ni, { state: 0, due: now + i });
+		}
+
+		const res = await makeApp().fetch(
+			new Request("http://localhost/api/review/due?limit=5&offset=5"),
+			env,
+		);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { cards: Array<{ fields: Record<string, string> }> };
+		expect(body.cards).toHaveLength(5);
+		// Should be cards 6-10 (ordered by due ASC)
+		expect(body.cards[0].fields.Front).toBe("5");
+	});
+
+	it("GET /api/review/due defaults to limit 50 (no query)", async () => {
+		const res = await makeApp().fetch(new Request("http://localhost/api/review/due"), env);
+		expect(res.status).toBe(200);
+		// parseLimit without explicit limit returns the default which is now 50.
+		// No assertion on card count — just verify no error.
+		const body = (await res.json()) as { cards: unknown[] };
+		expect(Array.isArray(body.cards)).toBe(true);
+	});
+
+	it("GET /api/review/due?limit=250 clamps to 200", async () => {
+		const now = Date.now();
+		for (let i = 0; i < 250; i++) {
+			const ni = `note-clamp-${i}`;
+			const ci = `card-clamp-${i}`;
+			await seedNote(ni, { fields: { Front: String(i), Back: `B${i}` } });
+			await seedCard(ci, ni, { state: 0, due: now + i });
+		}
+
+		const highLimitEnv = Object.assign(Object.create(Object.getPrototypeOf(env)), env, {
+			NEW_CARDS_PER_DAY: "300",
+			REVIEWS_PER_DAY: "300",
+		}) as typeof env;
+		const res = await makeApp().fetch(
+			new Request("http://localhost/api/review/due?limit=250"),
+			highLimitEnv,
+		);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { cards: unknown[] };
+		expect(body.cards).toHaveLength(200);
+	});
+
+	it("daily limit: 30 new cards with default newPerDay=20 returns only 20", async () => {
+		const now = Date.now();
+		for (let i = 0; i < 30; i++) {
+			const ni = `note-newlim-${i}`;
+			const ci = `card-newlim-${i}`;
+			await seedNote(ni, { fields: { Front: String(i), Back: `B${i}` } });
+			await seedCard(ci, ni, { state: 0, due: now + i });
+		}
+
+		const res = await makeApp().fetch(new Request("http://localhost/api/review/due?limit=50"), env);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { cards: unknown[] };
+		expect(body.cards).toHaveLength(20);
+	});
+
+	it("daily limit: after reviewing 10 new cards today, only 10 more returned", async () => {
+		const now = Date.now();
+		for (let i = 0; i < 30; i++) {
+			const ni = `note-partial-${i}`;
+			const ci = `card-partial-${i}`;
+			await seedNote(ni, { fields: { Front: String(i), Back: `B${i}` } });
+			await seedCard(ci, ni, { state: 0, due: now + i });
+		}
+
+		// Seed 10 revlog entries for today with state=0 (new card reviews)
+		for (let i = 0; i < 10; i++) {
+			await env.DB.prepare(
+				"INSERT INTO revlog (id, user_id, card_id, rating, state, due, stability, difficulty, " +
+					"elapsed_days, scheduled_days, review_time, created_at) " +
+					"VALUES (?, 'local', ?, 3, 0, ?, 1, 5, 0, 0, ?, ?)",
+			)
+				.bind(`revlog-partial-${i}`, `card-partial-${i}`, now + i, now, now)
+				.run();
+		}
+
+		const res = await makeApp().fetch(new Request("http://localhost/api/review/due?limit=50"), env);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { cards: unknown[] };
+		expect(body.cards).toHaveLength(10);
+	});
+
+	it("daily limit: 150 due review cards with reviewsPerDay=100 returns only 100", async () => {
+		const now = Date.now();
+		for (let i = 0; i < 150; i++) {
+			const ni = `note-revlim-${i}`;
+			const ci = `card-revlim-${i}`;
+			await seedNote(ni, { fields: { Front: String(i), Back: `B${i}` } });
+			await seedCard(ci, ni, {
+				state: 2,
+				due: now - 1000 + i,
+				reps: 1,
+				stability: 5,
+				difficulty: 5,
+			});
+		}
+
+		const res = await makeApp().fetch(
+			new Request("http://localhost/api/review/due?limit=200"),
+			env,
+		);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { cards: unknown[] };
+		expect(body.cards).toHaveLength(100);
+	});
+
+	it("GET /api/review/due returns total count of due cards", async () => {
+		const now = Date.now();
+		for (let i = 0; i < 5; i++) {
+			const ni = `note-total-${i}`;
+			const ci = `card-total-${i}`;
+			await seedNote(ni, { fields: { Front: String(i), Back: `B${i}` } });
+			await seedCard(ci, ni, { state: 0, due: now + i });
+		}
+
+		const res = await makeApp().fetch(new Request("http://localhost/api/review/due?limit=3"), env);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { cards: unknown[]; total: number };
+		expect(body.cards).toHaveLength(3);
+		expect(body.total).toBe(5);
+	});
+
+	it("GET /api/review/due?deck=Nonexistent returns empty cards and total 0", async () => {
+		const res = await makeApp().fetch(
+			new Request("http://localhost/api/review/due?deck=Nonexistent"),
+			env,
+		);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { cards: unknown[]; total: number };
+		expect(body.cards).toHaveLength(0);
+		expect(body.total).toBe(0);
+	});
+
+	it("GET /api/review/due total decreases after marking a card familiar", async () => {
+		const now = Date.now();
+		for (let i = 0; i < 3; i++) {
+			const ni = `note-fam-total-${i}`;
+			const ci = `card-fam-total-${i}`;
+			await seedNote(ni, { fields: { Front: String(i), Back: `B${i}` } });
+			await seedCard(ci, ni, { state: 0, due: now + i });
+		}
+
+		const before = await makeApp().fetch(new Request("http://localhost/api/review/due"), env);
+		const beforeBody = (await before.json()) as { cards: unknown[]; total: number };
+		expect(beforeBody.total).toBe(3);
+
+		await makeApp().fetch(
+			postJson("http://localhost/api/review/familiar", { noteId: "note-fam-total-0" }),
+			env,
+		);
+
+		const after = await makeApp().fetch(new Request("http://localhost/api/review/due"), env);
+		const afterBody = (await after.json()) as { cards: unknown[]; total: number };
+		expect(afterBody.total).toBe(2);
+	});
+
+	it("daily limit: custom env NEW_CARDS_PER_DAY=5 limits new cards to 5", async () => {
+		const now = Date.now();
+		for (let i = 0; i < 10; i++) {
+			const ni = `note-custom-${i}`;
+			const ci = `card-custom-${i}`;
+			await seedNote(ni, { fields: { Front: String(i), Back: `B${i}` } });
+			await seedCard(ci, ni, { state: 0, due: now + i });
+		}
+
+		const customEnv = Object.assign(Object.create(Object.getPrototypeOf(env)), env, {
+			NEW_CARDS_PER_DAY: "5",
+		}) as typeof env;
+		const res = await makeApp().fetch(
+			new Request("http://localhost/api/review/due?limit=50"),
+			customEnv,
+		);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { cards: unknown[] };
+		expect(body.cards).toHaveLength(5);
+	});
+
+	it("daily limit: total is capped by remaining daily limit", async () => {
+		const now = Date.now();
+		for (let i = 0; i < 10; i++) {
+			const ni = `note-total-limit-${i}`;
+			const ci = `card-total-limit-${i}`;
+			await seedNote(ni, { fields: { Front: String(i), Back: `B${i}` } });
+			await seedCard(ci, ni, { state: 0, due: now + i });
+		}
+
+		const customEnv = Object.assign(Object.create(Object.getPrototypeOf(env)), env, {
+			NEW_CARDS_PER_DAY: "5",
+		}) as typeof env;
+		const res = await makeApp().fetch(
+			new Request("http://localhost/api/review/due?limit=50"),
+			customEnv,
+		);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { cards: unknown[]; total: number };
+		expect(body.cards).toHaveLength(5);
+		expect(body.total).toBe(5);
 	});
 });

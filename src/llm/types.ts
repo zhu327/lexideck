@@ -1,12 +1,16 @@
 export interface NoteInput {
 	word: string;
+	front: string;
+	back: string;
 	fields: Record<string, string>;
 }
 
 export interface Enrichment {
-	exampleSentence: string;
-	extendedDefinition: string;
-	mnemonic: string;
+	coreMeaning: string;
+	meaningMap: string;
+	usageNotes: string;
+	memoryHooks: string;
+	reviewPrompt: string;
 }
 
 export interface LlmConfig {

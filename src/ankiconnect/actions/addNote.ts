@@ -42,7 +42,7 @@ export async function resolveNote(
 	return { deckId: deck.id, modelId: model.id, guid, model };
 }
 
-function coerceFields(raw: unknown): Record<string, string> {
+export function coerceFields(raw: unknown): Record<string, string> {
 	return raw && typeof raw === "object" ? (raw as Record<string, string>) : {};
 }
 
@@ -80,5 +80,5 @@ export async function addNoteAction(ctx: ActionCtx): Promise<ActionResult> {
 		guid: resolved.guid,
 	});
 	await createCardsForNote(ctx.db, ctx.userId, created, resolved.model.templates);
-	return { result: created.id, error: null };
+	return { result: created.ankiId, error: null };
 }

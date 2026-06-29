@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { AuthUser } from "../../auth/access";
+import type { AuthUser } from "../../auth/apiKey";
 import type { DbClient } from "../../db/client";
 import { listRandomCards } from "../../db/repos/cards-review";
 import { parseLimit } from "./due";

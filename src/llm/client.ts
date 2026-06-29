@@ -63,17 +63,19 @@ export async function enrichNote(
 			throw new Error(`Failed to parse LLM JSON content: ${(error as Error).message}`);
 		}
 		const obj = parsed as Record<string, unknown>;
-		const { exampleSentence, extendedDefinition, mnemonic } = obj;
+		const { coreMeaning, meaningMap, usageNotes, memoryHooks, reviewPrompt } = obj;
 		if (
-			typeof exampleSentence !== "string" ||
-			typeof extendedDefinition !== "string" ||
-			typeof mnemonic !== "string"
+			typeof coreMeaning !== "string" ||
+			typeof meaningMap !== "string" ||
+			typeof usageNotes !== "string" ||
+			typeof memoryHooks !== "string" ||
+			typeof reviewPrompt !== "string"
 		) {
 			throw new Error(
-				"LLM JSON is missing required keys: exampleSentence, extendedDefinition, mnemonic",
+				"LLM JSON is missing required keys: coreMeaning, meaningMap, usageNotes, memoryHooks, reviewPrompt",
 			);
 		}
-		return { exampleSentence, extendedDefinition, mnemonic };
+		return { coreMeaning, meaningMap, usageNotes, memoryHooks, reviewPrompt };
 	} finally {
 		clearTimeout(timer);
 	}
