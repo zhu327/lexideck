@@ -1,4 +1,4 @@
-import { fetchEnrichment, submitReview } from "./api";
+import { fetchEnrichment, ReviewSubmitError, submitReview } from "./api";
 import {
 	buildCardHTML,
 	disableButtons,
@@ -21,6 +21,7 @@ import {
 	loadNextBatch,
 	type ReviewSession,
 } from "./review-session";
+import { getSyncStatus, syncReviewOps } from "./review-sync";
 import { speak, stopSpeaking } from "./tts";
 
 // Module-level cleanup so re-entering renderReview (route change) cleans up stale bindings.
@@ -31,6 +32,7 @@ export async function renderReview(root: HTMLElement): Promise<void> {
 
 	root.innerHTML = `
 		<p class="hint">Review due cards. Flip to reveal, then rate your recall.</p>
+		<div id="sync-status" class="sync-status"></div>
 		<div id="review-card" class="card-area">Loading…</div>
 		<div id="load-more-wrap" hidden>
 			<button id="load-more-btn" class="secondary" type="button">Load more reviews</button>
@@ -52,6 +54,15 @@ export async function renderReview(root: HTMLElement): Promise<void> {
 
 	try {
 		await loadInitialBatch(session);
+
+		const syncStatusEl = root.querySelector("#sync-status");
+		if (syncStatusEl instanceof HTMLElement) {
+			const status = await getSyncStatus();
+			renderSyncStatus(syncStatusEl, {
+				...status,
+				offline: session.offlineCached || !navigator.onLine,
+			});
+		}
 
 		if (session.cards.length === 0) {
 			cardArea.textContent = "No cards due. Nice!";
@@ -122,14 +133,41 @@ async function showCard(
 		ratingSubmitted = true;
 		disableButtons(ratingsEl);
 		try {
-			const { due } = await submitReview(card.cardId, rating);
-			showIntervalFeedback(area, due);
-			await delay(800);
-			await showCard(area, loadMoreWrap, session, index + 1);
+			const result = await submitReview(card.cardId, rating, session.scope);
+			if (result.queued) {
+				showOfflineToast(area, result.queuedReason);
+				const syncStatusEl = document.querySelector("#sync-status");
+				if (syncStatusEl instanceof HTMLElement) {
+					const status = await getSyncStatus();
+					renderSyncStatus(syncStatusEl, { ...status, offline: !navigator.onLine });
+				}
+				await delay(600);
+				await showCard(area, loadMoreWrap, session, index + 1);
+			} else {
+				showIntervalFeedback(area, result.due);
+				await delay(800);
+				await showCard(area, loadMoreWrap, session, index + 1);
+			}
 		} catch (err) {
 			ratingSubmitted = false;
-			if (ratingsEl instanceof HTMLElement) {
-				ratingsEl.textContent = `Submit failed: ${errorMessage(err)}`;
+			if (err instanceof ReviewSubmitError) {
+				if (ratingsEl instanceof HTMLElement) {
+					if (err.kind === "server-priority") {
+						ratingsEl.textContent = "Card state changed on server. Refreshing...";
+						try {
+							await loadInitialBatch(session);
+							await showCard(area, loadMoreWrap, session, 0);
+						} catch {
+							ratingsEl.textContent = "Refresh failed. Please try again.";
+						}
+					} else {
+						ratingsEl.textContent = err.message;
+					}
+				}
+			} else {
+				if (ratingsEl instanceof HTMLElement) {
+					ratingsEl.textContent = `Submit failed: ${errorMessage(err)}`;
+				}
 			}
 		}
 	}
@@ -224,4 +262,34 @@ async function showCard(
 			});
 		}
 	}
+}
+
+function renderSyncStatus(
+	el: HTMLElement,
+	status: { pendingCount: number; offline: boolean; lastError?: string },
+): void {
+	if (status.lastError) {
+		el.innerHTML = `<span class="sync-error">Sync failed — <button id="sync-retry-btn" class="link-btn" type="button">tap to retry</button></span>`;
+		const retryBtn = el.querySelector("#sync-retry-btn");
+		if (retryBtn instanceof HTMLButtonElement) {
+			retryBtn.addEventListener("click", () => triggerSync(el));
+		}
+	} else if (status.offline) {
+		el.textContent = "Offline — using cached cards";
+	} else if (status.pendingCount > 0) {
+		el.textContent = `${status.pendingCount} review${status.pendingCount > 1 ? "s" : ""} pending sync`;
+	} else {
+		el.textContent = "";
+	}
+}
+
+async function triggerSync(statusEl: HTMLElement): Promise<void> {
+	await syncReviewOps();
+	const status = await getSyncStatus();
+	renderSyncStatus(statusEl, { ...status, offline: !navigator.onLine });
+}
+
+function showOfflineToast(area: HTMLElement, reason?: string): void {
+	const msg = reason === "server-error" ? "服务异常，已离线保存" : "已离线保存，联网后同步";
+	area.innerHTML = `<div class="offline-toast">${msg}</div>`;
 }

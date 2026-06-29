@@ -4,9 +4,6 @@ dist/
 .dev.vars
 .dev.vars.*
 wrangler.toml
-wrangler.toml.bak
-wrangler.toml
-wrangler.toml.bak
 .DS_Store
 *.log
 .pi

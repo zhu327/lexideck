@@ -5,7 +5,6 @@
 
 const CACHE_NAME = "anki-vocab-v4";
 const RUNTIME_CACHE = "anki-vocab-runtime";
-const SYNC_STORE = "anki-sync";
 const SYNC_TAG_REVIEWS = "sync-reviews";
 const PERIODIC_TAG_CHECK = "periodic-check";
 
@@ -186,40 +185,15 @@ function offlineResponse() {
 
 self.addEventListener("sync", (event) => {
 	if (event.tag === SYNC_TAG_REVIEWS) {
-		event.waitUntil(processReviewQueue());
+		event.waitUntil(triggerClientSync());
 	}
 });
 
-async function processReviewQueue() {
-	const db = await openSyncDB();
-	if (!db) return;
-
-	const tx = db.transaction("reviews", "readonly");
-	const store = tx.objectStore("reviews");
-	const items = await promiseRequest(store.getAll());
-
-	if (!items || items.length === 0) return;
-
-	for (const item of items) {
-		try {
-			const res = await fetch("/api/review/submit", {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ cardId: item.cardId, rating: item.rating }),
-			});
-
-			if (res.ok) {
-				const delTx = db.transaction("reviews", "readwrite");
-				const delStore = delTx.objectStore("reviews");
-				await promiseRequest(delStore.delete(item.id));
-			}
-			// If failed, keep in queue; will retry on next sync
-		} catch {
-			// Network error — keep in queue
-		}
+async function triggerClientSync() {
+	const allClients = await clients.matchAll({ type: "window" });
+	for (const client of allClients) {
+		client.postMessage({ type: "trigger-sync" });
 	}
-
-	db.close();
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -285,30 +259,3 @@ self.addEventListener("message", (event) => {
 			break;
 	}
 });
-
-/* ── IndexedDB Helpers ────────────────────────────────── */
-
-function openSyncDB() {
-	return new Promise((resolve) => {
-		const req = indexedDB.open(SYNC_STORE, 1);
-		req.onupgradeneeded = () => {
-			const db = req.result;
-			if (!db.objectStoreNames.contains("reviews")) {
-				const store = db.createObjectStore("reviews", {
-					keyPath: "id",
-					autoIncrement: true,
-				});
-				store.createIndex("timestamp", "timestamp", { unique: false });
-			}
-		};
-		req.onsuccess = () => resolve(req.result);
-		req.onerror = () => resolve(null);
-	});
-}
-
-function promiseRequest(request) {
-	return new Promise((resolve, reject) => {
-		request.onsuccess = () => resolve(request.result);
-		request.onerror = () => reject(request.error);
-	});
-}

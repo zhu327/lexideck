@@ -1,9 +1,10 @@
 import "./styles.css";
 import { renderAdd } from "./add";
-import { fetchDeckNames, fetchDue, getApiKey, processReviewQueue, setApiKey } from "./api";
+import { fetchDeckNames, fetchDue, getApiKey, setApiKey } from "./api";
 import { renderFamiliar } from "./familiar";
 import { renderQuiz } from "./quiz";
 import { renderReview } from "./review";
+import { syncReviewOps } from "./review-sync";
 import { renderSearch } from "./search";
 import { renderStats } from "./stats";
 
@@ -61,8 +62,7 @@ const app = document.getElementById("app");
 if (!app) throw new Error("#app element not found");
 
 function bootApp(): void {
-
-app.innerHTML = `
+	app.innerHTML = `
 	<header>
 		<h1>Anki Vocab</h1>
 		<div class="header-controls">
@@ -101,134 +101,132 @@ app.innerHTML = `
 	</nav>
 `;
 
-const screen = document.getElementById("screen");
-const offlineIndicator = document.getElementById("offline-indicator");
+	const screen = document.getElementById("screen");
+	const offlineIndicator = document.getElementById("offline-indicator");
 
-if (!screen || !offlineIndicator) {
-	throw new Error("Required elements not found");
-}
-
-/* ── Offline Detection ────────────────────────────────── */
-
-function updateOnlineStatus(): void {
-	const online = navigator.onLine;
-	if (online) {
-		offlineIndicator.classList.remove("visible");
-		// Process queued reviews that were submitted offline
-		processReviewQueue().catch(() => {
-			// Best-effort; ignore failures
-		});
-	} else {
-		offlineIndicator.classList.add("visible");
+	if (!screen || !offlineIndicator) {
+		throw new Error("Required elements not found");
 	}
-}
 
-window.addEventListener("online", updateOnlineStatus);
-window.addEventListener("offline", updateOnlineStatus);
-updateOnlineStatus();
+	/* ── Offline Detection ────────────────────────────────── */
 
-/* ── Badge API — show pending review count ────────────── */
-
-async function updateBadge(): Promise<void> {
-	if (!("setAppBadge" in navigator)) return;
-	try {
-		const deck = localStorage.getItem("selectedDeck") || null;
-		const { total } = await fetchDue(deck, 1, 0);
-		if (total > 0) {
-			await (navigator as Navigator & { setAppBadge: (c: number) => Promise<void> }).setAppBadge(
-				total,
-			);
+	function updateOnlineStatus(): void {
+		const online = navigator.onLine;
+		if (online) {
+			offlineIndicator.classList.remove("visible");
+			syncReviewOps().catch(() => {});
 		} else {
-			await (navigator as Navigator & { clearAppBadge: () => Promise<void> }).clearAppBadge();
+			offlineIndicator.classList.add("visible");
 		}
-	} catch {
-		// Badge API unavailable or fetch failed — ignore
 	}
-}
 
-// Update badge on load and after reviews
-updateBadge().catch(() => {});
-window.addEventListener("hashchange", () => {
-	if (window.location.hash === "#review" || !window.location.hash) {
-		updateBadge().catch(() => {});
-	}
-});
+	window.addEventListener("online", updateOnlineStatus);
+	window.addEventListener("offline", updateOnlineStatus);
+	updateOnlineStatus();
 
-/* ── Deck Selector ────────────────────────────────────── */
+	/* ── Badge API — show pending review count ────────────── */
 
-const deckSelector = document.getElementById("deck-selector") as HTMLSelectElement | null;
-if (deckSelector) {
-	const saved = localStorage.getItem("selectedDeck") || "";
-	fetchDeckNames()
-		.then((decks) => {
-			for (const deck of decks) {
-				const opt = document.createElement("option");
-				opt.value = deck;
-				opt.textContent = deck;
-				deckSelector.appendChild(opt);
+	async function updateBadge(): Promise<void> {
+		if (!("setAppBadge" in navigator)) return;
+		try {
+			const deck = localStorage.getItem("selectedDeck") || null;
+			const { total } = await fetchDue(deck, 1, 0);
+			if (total > 0) {
+				await (navigator as Navigator & { setAppBadge: (c: number) => Promise<void> }).setAppBadge(
+					total,
+				);
+			} else {
+				await (navigator as Navigator & { clearAppBadge: () => Promise<void> }).clearAppBadge();
 			}
-			deckSelector.value = saved;
-		})
-		.catch(() => {
-			// Deck list unavailable; selector stays on "All Decks"
-		});
-
-	deckSelector.addEventListener("change", () => {
-		const val = deckSelector.value;
-		if (val) {
-			localStorage.setItem("selectedDeck", val);
-		} else {
-			localStorage.removeItem("selectedDeck");
+		} catch {
+			// Badge API unavailable or fetch failed — ignore
 		}
-		route();
+	}
+
+	// Update badge on load and after reviews
+	updateBadge().catch(() => {});
+	syncReviewOps().catch(() => {});
+	window.addEventListener("hashchange", () => {
+		if (window.location.hash === "#review" || !window.location.hash) {
+			updateBadge().catch(() => {});
+		}
 	});
-}
 
-/* ── Routing ──────────────────────────────────────────── */
+	/* ── Deck Selector ────────────────────────────────────── */
 
-function route(): void {
-	const hash = window.location.hash.replace(/^#/, "") || "review";
+	const deckSelector = document.getElementById("deck-selector") as HTMLSelectElement | null;
+	if (deckSelector) {
+		const saved = localStorage.getItem("selectedDeck") || "";
+		fetchDeckNames()
+			.then((decks) => {
+				for (const deck of decks) {
+					const opt = document.createElement("option");
+					opt.value = deck;
+					opt.textContent = deck;
+					deckSelector.appendChild(opt);
+				}
+				deckSelector.value = saved;
+			})
+			.catch(() => {
+				// Deck list unavailable; selector stays on "All Decks"
+			});
 
-	// Highlight active tab
-	const nav = document.getElementById("main-nav");
-	if (nav) {
-		for (const link of nav.querySelectorAll("a")) {
-			const linkHash = link.getAttribute("href")?.replace(/^#/, "") || "";
-			link.classList.toggle("active", linkHash === hash);
+		deckSelector.addEventListener("change", () => {
+			const val = deckSelector.value;
+			if (val) {
+				localStorage.setItem("selectedDeck", val);
+			} else {
+				localStorage.removeItem("selectedDeck");
+			}
+			route();
+		});
+	}
+
+	/* ── Routing ──────────────────────────────────────────── */
+
+	function route(): void {
+		const hash = window.location.hash.replace(/^#/, "") || "review";
+
+		// Highlight active tab
+		const nav = document.getElementById("main-nav");
+		if (nav) {
+			for (const link of nav.querySelectorAll("a")) {
+				const linkHash = link.getAttribute("href")?.replace(/^#/, "") || "";
+				link.classList.toggle("active", linkHash === hash);
+			}
+		}
+
+		screen.innerHTML = "";
+		switch (hash) {
+			case "quiz":
+				renderQuiz(screen);
+				break;
+			case "familiar":
+				renderFamiliar(screen);
+				break;
+			case "search":
+				renderSearch(screen);
+				break;
+			case "stats":
+				renderStats(screen);
+				break;
+			case "add":
+				renderAdd(screen);
+				break;
+			default:
+				renderReview(screen);
+				break;
+		}
+
+		// After a route change, if the page is a review page, update badge
+		if (hash === "review" || !hash) {
+			syncReviewOps().catch(() => {});
+			updateBadge().catch(() => {});
 		}
 	}
 
-	screen.innerHTML = "";
-	switch (hash) {
-		case "quiz":
-			renderQuiz(screen);
-			break;
-		case "familiar":
-			renderFamiliar(screen);
-			break;
-		case "search":
-			renderSearch(screen);
-			break;
-		case "stats":
-			renderStats(screen);
-			break;
-		case "add":
-			renderAdd(screen);
-			break;
-		default:
-			renderReview(screen);
-			break;
-	}
-
-	// After a route change, if the page is a review page, update badge
-	if (hash === "review" || !hash) {
-		updateBadge().catch(() => {});
-	}
-}
-
-window.addEventListener("hashchange", route);
-route();
-
+	window.addEventListener("hashchange", route);
+	route();
 } // end bootApp
 
 // Show setup screen if no API key is stored, otherwise boot the app.
@@ -267,6 +265,9 @@ if ("serviceWorker" in navigator) {
 
 				// Listen for messages from service worker
 				navigator.serviceWorker.addEventListener("message", (event) => {
+					if (event.data?.type === "trigger-sync") {
+						syncReviewOps().catch(() => {});
+					}
 					if (event.data?.type === "due-count" && typeof event.data.count === "number") {
 						if ("setAppBadge" in navigator) {
 							const n = navigator as Navigator & {

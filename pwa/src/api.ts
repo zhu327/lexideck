@@ -5,6 +5,7 @@ import {
 	enrichUnavailableMessage,
 	type Rating,
 } from "./helpers";
+import { addReviewOp, removeCardFromReviewQueue } from "./offline-review";
 
 /* ── API Key Management ────────────────────────────────── */
 
@@ -23,7 +24,7 @@ export function clearApiKey(): void {
 }
 
 /** Authenticated fetch — adds Bearer token from localStorage. */
-async function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+export async function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
 	const key = getApiKey();
 	const headers = new Headers(init?.headers);
 	if (key) {
@@ -116,116 +117,111 @@ export async function fetchDue(
 	return { cards: body.cards, total: body.total ?? body.cards.length };
 }
 
-export async function submitReview(cardId: string, rating: Rating): Promise<{ due: number }> {
+export type SubmitResult =
+	| { due: number; queued?: false }
+	| { due: number; queued: true; queuedReason: "offline" | "server-error" };
+
+export type SubmitFailureKind =
+	| "network"
+	| "auth"
+	| "client"
+	| "server-priority"
+	| "server-error"
+	| "offline-storage";
+
+export class ReviewSubmitError extends Error {
+	readonly kind: SubmitFailureKind;
+	readonly status?: number;
+	constructor(kind: SubmitFailureKind, message: string, status?: number) {
+		super(message);
+		this.name = "ReviewSubmitError";
+		this.kind = kind;
+		this.status = status;
+	}
+}
+
+async function tryQueueOp(cardId: string, rating: Rating, scope: string): Promise<boolean> {
 	try {
-		const res = await authFetch("/api/review/submit", {
+		await addReviewOp({ cardId, rating, createdAt: Date.now(), scope });
+		return true;
+	} catch {
+		// IDB unavailable — op lost, caller must treat as failure
+		return false;
+	}
+}
+
+async function tryRegisterBackgroundSync(): Promise<void> {
+	try {
+		if ("serviceWorker" in navigator) {
+			const reg = await navigator.serviceWorker.ready;
+			if (reg && "sync" in reg) {
+				await (
+					reg as ServiceWorkerRegistration & { sync: { register(tag: string): Promise<void> } }
+				).sync.register("sync-reviews");
+			}
+		}
+	} catch {
+		// Background sync not supported — ignore
+	}
+}
+
+export async function submitReview(
+	cardId: string,
+	rating: Rating,
+	scope: string,
+): Promise<SubmitResult> {
+	let res: Response;
+	try {
+		res = await authFetch("/api/review/submit", {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ cardId, rating }),
 		});
-		return expectJson<{ due: number }>(res);
 	} catch (err) {
-		// Queue for background sync when offline
-		if (!navigator.onLine) {
-			await queueOfflineReview(cardId, rating);
-			// Return a placeholder — the review will be synced later
-			return { due: Date.now() + 60000 };
+		if (err instanceof TypeError || !navigator.onLine) {
+			const queued = await tryQueueOp(cardId, rating, scope);
+			if (!queued) {
+				throw new ReviewSubmitError("offline-storage", "无法离线保存，评分未提交", undefined);
+			}
+			await removeCardFromReviewQueue(scope, cardId);
+			await tryRegisterBackgroundSync();
+			return { due: Date.now() + 60_000, queued: true, queuedReason: "offline" };
 		}
 		throw err;
 	}
-}
 
-/* ── Offline Review Queue ─────────────────────────────── */
-
-interface QueuedReview {
-	id?: number;
-	cardId: string;
-	rating: number;
-	timestamp: number;
-}
-
-function openSyncDB(): Promise<IDBDatabase | null> {
-	return new Promise((resolve) => {
-		const req = indexedDB.open("anki-sync", 1);
-		req.onupgradeneeded = () => {
-			const db = req.result;
-			if (!db.objectStoreNames.contains("reviews")) {
-				const store = db.createObjectStore("reviews", {
-					keyPath: "id",
-					autoIncrement: true,
-				});
-				store.createIndex("timestamp", "timestamp", { unique: false });
-			}
-		};
-		req.onsuccess = () => resolve(req.result);
-		req.onerror = () => resolve(null);
-	});
-}
-
-/** Store a review submission for later syncing when offline. */
-export async function queueOfflineReview(cardId: string, rating: number): Promise<void> {
-	const db = await openSyncDB();
-	if (!db) return;
-
-	const item: QueuedReview = {
-		cardId,
-		rating,
-		timestamp: Date.now(),
-	};
-
-	const tx = db.transaction("reviews", "readwrite");
-	const store = tx.objectStore("reviews");
-	store.add(item);
-
-	// Register a background sync to process the queue
-	try {
-		const reg = await navigator.serviceWorker?.ready;
-		if (reg && "sync" in reg) {
-			await (
-				reg as ServiceWorkerRegistration & { sync: { register(tag: string): Promise<void> } }
-			).sync.register("sync-reviews");
+	if (res.status >= 500 && res.status <= 599) {
+		const queued = await tryQueueOp(cardId, rating, scope);
+		if (!queued) {
+			throw new ReviewSubmitError("offline-storage", "无法离线保存，评分未提交", undefined);
 		}
-	} catch {
-		// Background sync not supported
+		await removeCardFromReviewQueue(scope, cardId);
+		await tryRegisterBackgroundSync();
+		return { due: Date.now() + 60_000, queued: true, queuedReason: "server-error" };
 	}
 
-	db.close();
-}
-
-/** Process queued review submissions when back online. */
-export async function processReviewQueue(): Promise<number> {
-	const db = await openSyncDB();
-	if (!db) return 0;
-
-	const tx = db.transaction("reviews", "readonly");
-	const store = tx.objectStore("reviews");
-	const items: QueuedReview[] = await new Promise((resolve) => {
-		const req = store.getAll();
-		req.onsuccess = () => resolve(req.result);
-		req.onerror = () => resolve([]);
-	});
-
-	let synced = 0;
-	for (const item of items) {
-		try {
-			const res = await authFetch("/api/review/submit", {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ cardId: item.cardId, rating: item.rating }),
-			});
-			if (res.ok && item.id !== undefined) {
-				const delTx = db.transaction("reviews", "readwrite");
-				const delStore = delTx.objectStore("reviews");
-				delStore.delete(item.id);
-				synced++;
-			}
-		} catch {
-			// Still offline — keep in queue
-		}
+	if (res.status === 401 || res.status === 403) {
+		throw new ReviewSubmitError("auth", "Authentication failed", res.status);
 	}
 
-	db.close();
-	return synced;
+	if (res.status === 400) {
+		throw new ReviewSubmitError("client", "Invalid request", res.status);
+	}
+
+	if (res.status === 404 || res.status === 409) {
+		throw new ReviewSubmitError("server-priority", "Card state changed on server", res.status);
+	}
+
+	if (!res.ok) {
+		throw new ReviewSubmitError(
+			"server-error",
+			`Unexpected server response: ${res.status}`,
+			res.status,
+		);
+	}
+
+	const body = (await res.json()) as { due: number };
+	return { due: body.due };
 }
 
 export async function fetchQuiz(deckName?: string | null, limit = 20): Promise<ReviewCardView[]> {
