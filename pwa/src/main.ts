@@ -12,7 +12,7 @@ function renderSetup(app: HTMLElement): void {
 		<div class="setup-screen">
 			<h1>Anki Vocab</h1>
 			<p>Enter your API key to connect to your Anki backend.</p>
-			<form id="setup-form">
+			<form id="setup-form" class="setup-card">
 				<label for="api-key-input">API Key</label>
 				<input id="api-key-input" type="password" autocomplete="off" placeholder="Paste your API key" />
 				<button type="submit" id="setup-submit">Connect</button>

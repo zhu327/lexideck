@@ -31,11 +31,17 @@ export async function renderReview(root: HTMLElement): Promise<void> {
 	const selectedDeck = localStorage.getItem("selectedDeck") || null;
 
 	root.innerHTML = `
-		<p class="hint">Review due cards. Flip to reveal, then rate your recall.</p>
-		<div id="sync-status" class="sync-status"></div>
-		<div id="review-card" class="card-area">Loading…</div>
-		<div id="load-more-wrap" hidden>
-			<button id="load-more-btn" class="secondary" type="button">Load more reviews</button>
+		<div class="review-page">
+			<section class="page-hero review-hero" aria-labelledby="review-title">
+				<div class="page-kicker">Daily Review</div>
+				<h2 id="review-title">Review due cards</h2>
+				<p class="hint">Flip each card, recall the answer, then rate your memory.</p>
+			</section>
+			<div id="sync-status" class="sync-status"></div>
+			<div id="review-card" class="card-area">Loading…</div>
+			<div id="load-more-wrap" hidden>
+				<button id="load-more-btn" class="secondary" type="button">Load more reviews</button>
+			</div>
 		</div>
 	`;
 

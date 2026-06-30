@@ -69,6 +69,7 @@
 	--shadow-inset-btn:
 		rgba(255, 255, 255, 0.2) 0px 0.5px 0px 0px inset,
 		rgba(0, 0, 0, 0.2) 0px 0px 0px 0.5px inset, rgba(0, 0, 0, 0.05) 0px 1px 2px 0px;
+	--ring-blue: rgba(59, 130, 246, 0.5);
 	--shadow-focus: rgba(0, 0, 0, 0.1) 0px 4px 12px;
 	--shadow-dialog: rgba(0, 0, 0, 0.1) 0px 4px 12px;
 
@@ -265,25 +266,39 @@ nav.tabs a {
 }
 
 nav.tabs a .tab-icon {
-	display: block;
-	width: 24px;
-	height: 24px;
+	display: grid;
+	place-items: center;
+	width: 32px;
+	height: 28px;
+	border-radius: var(--radius-pill);
 	flex-shrink: 0;
+	transition:
+		background 0.15s ease,
+		box-shadow 0.15s ease;
 }
 
 nav.tabs a .tab-icon svg {
 	display: block;
-	width: 24px;
-	height: 24px;
+	width: 22px;
+	height: 22px;
 }
 
 nav.tabs a:hover {
 	color: var(--ink-secondary);
 }
 
+nav.tabs a:hover .tab-icon {
+	background: rgba(28, 28, 28, 0.03);
+}
+
 nav.tabs a.active {
 	color: var(--ink);
 	font-weight: 600;
+}
+
+nav.tabs a.active .tab-icon {
+	background: rgba(28, 28, 28, 0.04);
+	box-shadow: inset 0 0 0 1px var(--hairline);
 }
 
 /* ── Main Content ─────────────────────────────────────── */
@@ -300,6 +315,56 @@ main {
 	font-weight: 400;
 	line-height: 1.5;
 	margin: 0 0 var(--space-lg);
+}
+
+/* ── Page Shells — editorial warmth ───────────────────── */
+
+.review-page,
+.stats-page,
+.search-page {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-lg);
+}
+
+.page-hero,
+.search-hero {
+	position: relative;
+	padding: var(--space-xxl) var(--space-xl);
+	border: 1px solid var(--hairline);
+	border-radius: var(--radius-lg);
+	background:
+		radial-gradient(circle at 15% 0%, rgba(255, 177, 141, 0.2), transparent 34%),
+		radial-gradient(circle at 85% 10%, rgba(131, 169, 226, 0.16), transparent 32%), var(--surface);
+	overflow: clip;
+}
+
+.page-kicker,
+.search-kicker {
+	font-family: var(--font-ui);
+	font-size: 13px;
+	font-weight: 400;
+	line-height: 1;
+	color: var(--ink-muted);
+	margin-bottom: var(--space-sm);
+}
+
+.page-hero h2,
+.search-hero h2 {
+	font-size: clamp(36px, 9vw, 48px);
+	font-weight: 600;
+	line-height: 1;
+	letter-spacing: -1.2px;
+	margin: 0 0 var(--space-md);
+}
+
+.page-hero .hint,
+.search-hero .hint {
+	max-width: 34rem;
+	font-size: 16px;
+	line-height: 1.5;
+	color: var(--ink-muted);
+	margin: 0;
 }
 
 /* ── Buttons — Lovable grammar ────────────────────────── */
@@ -649,6 +714,7 @@ button:disabled:active {
 }
 
 .ratings button {
+	position: relative;
 	flex: 1;
 	min-width: 0;
 	min-height: 48px;
@@ -658,46 +724,45 @@ button:disabled:active {
 	border: 1px solid rgba(28, 28, 28, 0.04);
 	border-radius: var(--radius-sm);
 	background: rgba(28, 28, 28, 0.03);
+	color: var(--ink);
 	transition:
 		background 0.15s ease,
+		border-color 0.15s ease,
 		opacity 0.15s ease;
 }
 
-/* Rating states keep low-saturation semantic tints for recognition */
-.ratings button:nth-child(1) {
-	background: rgba(184, 66, 51, 0.08);
-	color: var(--error);
+.ratings button::before {
+	content: "";
+	position: absolute;
+	top: 7px;
+	left: 50%;
+	width: 4px;
+	height: 4px;
+	border-radius: 50%;
+	transform: translateX(-50%);
+	background: var(--ink-faint);
 }
 
-.ratings button:nth-child(1):hover {
-	background: rgba(184, 66, 51, 0.12);
+.ratings button:hover {
+	background: rgba(28, 28, 28, 0.04);
+	border-color: rgba(28, 28, 28, 0.12);
 }
 
-.ratings button:nth-child(2) {
-	background: rgba(181, 125, 36, 0.08);
-	color: var(--warning);
+/* Rating states use small semantic dots, not large color fills */
+.ratings button:nth-child(1)::before {
+	background: var(--error);
 }
 
-.ratings button:nth-child(2):hover {
-	background: rgba(181, 125, 36, 0.12);
+.ratings button:nth-child(2)::before {
+	background: var(--warning);
 }
 
-.ratings button:nth-child(3) {
-	background: rgba(61, 122, 95, 0.08);
-	color: var(--success);
+.ratings button:nth-child(3)::before {
+	background: var(--success);
 }
 
-.ratings button:nth-child(3):hover {
-	background: rgba(61, 122, 95, 0.12);
-}
-
-.ratings button:nth-child(4) {
-	background: rgba(74, 111, 165, 0.08);
-	color: var(--info);
-}
-
-.ratings button:nth-child(4):hover {
-	background: rgba(74, 111, 165, 0.12);
+.ratings button:nth-child(4)::before {
+	background: var(--info);
 }
 
 /* ── Status Badges ────────────────────────────────────── */
@@ -740,8 +805,8 @@ button:disabled:active {
 
 /* ── Stats Grid ───────────────────────────────────────── */
 
-#stats-area {
-	padding: var(--space-md);
+.stats-area {
+	min-height: 120px;
 }
 
 .stats-grid {
@@ -780,48 +845,6 @@ button:disabled:active {
 }
 
 /* ── Search ───────────────────────────────────────────── */
-
-.search-page {
-	display: flex;
-	flex-direction: column;
-	gap: var(--space-lg);
-}
-
-.search-hero {
-	position: relative;
-	padding: var(--space-xxl) var(--space-xl);
-	border: 1px solid var(--hairline);
-	border-radius: var(--radius-lg);
-	background:
-		radial-gradient(circle at 15% 0%, rgba(255, 177, 141, 0.2), transparent 34%),
-		radial-gradient(circle at 85% 10%, rgba(131, 169, 226, 0.16), transparent 32%), var(--surface);
-	overflow: clip;
-}
-
-.search-kicker {
-	font-family: var(--font-ui);
-	font-size: 13px;
-	font-weight: 400;
-	line-height: 1;
-	color: var(--ink-muted);
-	margin-bottom: var(--space-sm);
-}
-
-.search-hero h2 {
-	font-size: clamp(36px, 9vw, 48px);
-	font-weight: 600;
-	line-height: 1;
-	letter-spacing: -1.2px;
-	margin: 0 0 var(--space-md);
-}
-
-.search-hero .hint {
-	max-width: 34rem;
-	font-size: 16px;
-	line-height: 1.5;
-	color: var(--ink-muted);
-	margin: 0;
-}
 
 .search-panel,
 .search-export {
@@ -863,7 +886,9 @@ button:disabled:active {
 #search-input:focus {
 	border-color: var(--hairline-strong);
 	outline: none;
-	box-shadow: var(--shadow-focus);
+	box-shadow:
+		0 0 0 2px var(--ring-blue),
+		var(--shadow-focus);
 }
 
 #search-input::placeholder {
@@ -1235,7 +1260,9 @@ button:disabled:active {
 .edit-field-group textarea:focus {
 	border-color: var(--hairline-strong);
 	outline: none;
-	box-shadow: var(--shadow-focus);
+	box-shadow:
+		0 0 0 2px var(--ring-blue),
+		var(--shadow-focus);
 }
 
 .edit-actions {
@@ -1430,14 +1457,18 @@ button:disabled:active {
 		padding: 14px 14px 18px;
 	}
 
+	.review-page,
+	.stats-page,
 	.search-page {
 		gap: var(--space-md);
 	}
 
+	.page-hero,
 	.search-hero {
 		padding: var(--space-xl) var(--space-lg);
 	}
 
+	.page-hero h2,
 	.search-hero h2 {
 		letter-spacing: -0.9px;
 	}
@@ -1588,6 +1619,7 @@ button:disabled:active {
 /* ── Setup Screen ─────────────────────────────────────── */
 
 .setup-screen {
+	position: relative;
 	display: flex;
 	flex-direction: column;
 	align-items: center;
@@ -1595,25 +1627,50 @@ button:disabled:active {
 	min-height: 100dvh;
 	padding: var(--space-xl);
 	text-align: center;
+	overflow: hidden;
+}
+
+.setup-screen::before {
+	content: "";
+	position: absolute;
+	inset: 8% 8% auto;
+	height: 260px;
+	background:
+		radial-gradient(circle at 20% 20%, rgba(255, 177, 141, 0.22), transparent 38%),
+		radial-gradient(circle at 80% 10%, rgba(131, 169, 226, 0.16), transparent 34%);
+	pointer-events: none;
+}
+
+.setup-screen > * {
+	position: relative;
 }
 
 .setup-screen h1 {
-	font-size: 1.5rem;
+	font-size: clamp(36px, 9vw, 48px);
+	font-weight: 600;
+	line-height: 1;
+	letter-spacing: -1.2px;
 	margin-bottom: var(--space-md);
 }
 
 .setup-screen p {
-	color: var(--ink-secondary);
+	color: var(--ink-muted);
 	margin-bottom: var(--space-xl);
 	max-width: 320px;
 }
 
-.setup-screen form {
+.setup-card {
 	display: flex;
 	flex-direction: column;
 	gap: var(--space-md);
 	width: 100%;
-	max-width: 320px;
+	max-width: 340px;
+	padding: var(--space-xl);
+	border: 1px solid var(--hairline);
+	border-radius: 16px;
+	background: rgba(247, 244, 237, 0.86);
+	-webkit-backdrop-filter: blur(12px);
+	backdrop-filter: blur(12px);
 }
 
 .setup-screen label {
@@ -1627,9 +1684,18 @@ button:disabled:active {
 	padding: var(--space-md);
 	border: 1px solid var(--hairline);
 	border-radius: var(--radius-md);
+	font-family: var(--font-ui);
 	font-size: 1rem;
 	background: var(--surface);
 	color: var(--ink);
+}
+
+.setup-screen input:focus {
+	border-color: var(--hairline-strong);
+	outline: none;
+	box-shadow:
+		0 0 0 2px var(--ring-blue),
+		var(--shadow-focus);
 }
 
 .setup-screen button {

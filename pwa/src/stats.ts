@@ -2,7 +2,16 @@ import { fetchStats } from "./api";
 import { errorMessage } from "./helpers";
 
 export async function renderStats(root: HTMLElement): Promise<void> {
-	root.innerHTML = `<div id="stats-area" class="card-area">Loading stats…</div>`;
+	root.innerHTML = `
+		<div class="stats-page">
+			<section class="page-hero stats-hero" aria-labelledby="stats-title">
+				<div class="page-kicker">Progress Snapshot</div>
+				<h2 id="stats-title">Your memory practice at a glance</h2>
+				<p class="hint">Track today's rhythm, retention, and the shape of your deck.</p>
+			</section>
+			<div id="stats-area" class="stats-area">Loading stats…</div>
+		</div>
+	`;
 
 	const area = root.querySelector<HTMLElement>("#stats-area");
 	if (!area) return;
