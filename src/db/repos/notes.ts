@@ -89,11 +89,7 @@ export async function createNote(
  * Delete a note and all associated data (cards, revlog, enrichments).
  * Returns true if the note existed and was deleted.
  */
-export async function deleteNote(
-	db: DbClient,
-	userId: string,
-	noteId: string,
-): Promise<boolean> {
+export async function deleteNote(db: DbClient, userId: string, noteId: string): Promise<boolean> {
 	const note = await db.queryFirst(
 		"SELECT 1 FROM notes WHERE user_id = ? AND id = ?",
 		userId,
@@ -109,23 +105,11 @@ export async function deleteNote(
 		noteId,
 	);
 	// Delete associated cards
-	await db.exec(
-		"DELETE FROM cards WHERE user_id = ? AND note_id = ?",
-		userId,
-		noteId,
-	);
+	await db.exec("DELETE FROM cards WHERE user_id = ? AND note_id = ?", userId, noteId);
 	// Delete associated enrichments
-	await db.exec(
-		"DELETE FROM enrichments WHERE user_id = ? AND note_id = ?",
-		userId,
-		noteId,
-	);
+	await db.exec("DELETE FROM enrichments WHERE user_id = ? AND note_id = ?", userId, noteId);
 	// Delete the note itself
-	await db.exec(
-		"DELETE FROM notes WHERE user_id = ? AND id = ?",
-		userId,
-		noteId,
-	);
+	await db.exec("DELETE FROM notes WHERE user_id = ? AND id = ?", userId, noteId);
 	return true;
 }
 
@@ -307,6 +291,7 @@ export interface NoteSearchResult {
 	fields: Record<string, string>;
 	deckName: string;
 	tags: string[];
+	known: boolean;
 }
 
 export async function searchNotes(
@@ -334,8 +319,10 @@ export async function searchNotes(
 		fields: string;
 		deck_name: string;
 		tags: string;
+		known: number;
 	}>(
-		`SELECT n.id, n.fields, d.name as deck_name, n.tags ` +
+		`SELECT n.id, n.fields, d.name as deck_name, n.tags, ` +
+			`EXISTS (SELECT 1 FROM json_each(n.tags) WHERE json_each.value = 'known') AS known ` +
 			`FROM notes n JOIN decks d ON d.id = n.deck_id ` +
 			`${whereClause} ORDER BY n.created_at DESC LIMIT ? OFFSET ?`,
 		...baseParams,
@@ -348,6 +335,7 @@ export async function searchNotes(
 		fields: parseJsonColumn<Record<string, string>>(row.fields, {}),
 		deckName: row.deck_name,
 		tags: parseJsonColumn<string[]>(row.tags, []),
+		known: row.known === 1,
 	}));
 
 	return { notes, total };

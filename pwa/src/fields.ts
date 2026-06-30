@@ -1,3 +1,5 @@
+import { escapeHtml } from "./dom";
+
 /**
  * Render card fields as structured HTML.
  * @param fields - The card's field map (e.g., {Front: "dog", Back: "犬"})
@@ -18,13 +20,4 @@ export function renderFields(fields: Record<string, string>, frontKey: string): 
   `,
 		)
 		.join("");
-}
-
-function escapeHtml(text: string): string {
-	return text
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;")
-		.replace(/'/g, "&#39;");
 }

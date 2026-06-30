@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { NoteSearchResult } from "../pwa/src/api";
 import { buildCardHTML } from "../pwa/src/card-renderer";
 import { renderFields } from "../pwa/src/fields";
 import {
@@ -318,5 +319,30 @@ describe("renderFields", () => {
 	it("renders HTML in field values (card content from Yomitan contains HTML)", () => {
 		const html = renderFields({ Front: "hello", Back: "line1<br>line2" }, "Front");
 		expect(html).toContain("<br>");
+	});
+});
+
+describe("NoteSearchResult interface", () => {
+	it("includes known field", () => {
+		// Type-level test: this will fail to compile if 'known' is not in the interface
+		const result: NoteSearchResult = {
+			noteId: "test-123",
+			fields: { Front: "hello", Back: "world" },
+			deckName: "Default",
+			tags: ["tag1"],
+			known: true,
+		};
+		expect(result.known).toBe(true);
+	});
+
+	it("known can be false", () => {
+		const result: NoteSearchResult = {
+			noteId: "test-456",
+			fields: { Front: "bye", Back: "world" },
+			deckName: "Default",
+			tags: [],
+			known: false,
+		};
+		expect(result.known).toBe(false);
 	});
 });

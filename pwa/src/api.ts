@@ -294,6 +294,7 @@ export interface NoteSearchResult {
 	fields: Record<string, string>;
 	deckName: string;
 	tags: string[];
+	known: boolean;
 }
 
 export async function searchNotes(

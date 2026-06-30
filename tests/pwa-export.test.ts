@@ -60,6 +60,8 @@ class FakeElement {
 		this.html = value;
 		this.children.length = 0;
 		if (value.includes('id="search-input"')) {
+			const hero = this.appendKnownChild("section", "", "search-hero");
+			hero.textContent = "Search your notes";
 			const exportTitle = this.appendKnownChild("div", "", "search-export-title");
 			exportTitle.textContent = "Export your collection";
 			const exportCopy = this.appendKnownChild("div", "", "hint");
@@ -70,7 +72,7 @@ class FakeElement {
 			this.appendKnownChild("div", "export-apkg-status", "hint");
 			this.appendKnownChild("input", "search-input");
 			this.appendKnownChild("div", "search-status", "hint");
-			this.appendKnownChild("div", "search-results", "card-area");
+			this.appendKnownChild("div", "search-results", "card-area search-results-card");
 			this.appendKnownChild("button", "search-more", "secondary");
 		}
 	}
@@ -274,15 +276,20 @@ describe("Search APKG export UI", () => {
 		vi.unstubAllGlobals();
 	});
 
-	it("renders the export button and explanatory copy", async () => {
+	it("renders the Search page with Lovable-style sections and export copy", async () => {
 		const root = new FakeElement();
 		const { renderSearch } = await import("../pwa/src/search");
 
 		await renderSearch(root as unknown as HTMLElement);
 
 		const button = root.querySelector<FakeElement>("#export-apkg-btn");
+		const results = root.querySelector<FakeElement>("#search-results");
 		expect(button).not.toBeNull();
 		expect(button?.textContent).toContain("Export .apkg");
+		expect(root.innerHTML).toContain("search-hero");
+		expect(root.innerHTML).toContain("search-panel");
+		expect(results?.className).toContain("search-results-card");
+		expect(root.textContent).toMatch(/search your notes/i);
 		expect(root.textContent).toMatch(/all notes/i);
 		expect(root.textContent).toMatch(/review progress/i);
 	});

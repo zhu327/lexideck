@@ -1,8 +1,5 @@
 import "./styles.css";
-import { renderAdd } from "./add";
 import { fetchDeckNames, fetchDue, getApiKey, setApiKey } from "./api";
-import { renderFamiliar } from "./familiar";
-import { renderQuiz } from "./quiz";
 import { renderReview } from "./review";
 import { syncReviewOps } from "./review-sync";
 import { renderSearch } from "./search";
@@ -78,14 +75,6 @@ function bootApp(): void {
 			<span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 12l2 2 4-4"/></svg></span>
 			Review
 		</a>
-		<a href="#quiz">
-			<span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><circle cx="12" cy="17" r="0.5" fill="currentColor"/></svg></span>
-			Quiz
-		</a>
-		<a href="#familiar">
-			<span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></span>
-			Known
-		</a>
 		<a href="#search">
 			<span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg></span>
 			Search
@@ -93,10 +82,6 @@ function bootApp(): void {
 		<a href="#stats">
 			<span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="9" rx="1"/><rect x="10" y="7" width="4" height="14" rx="1"/><rect x="17" y="3" width="4" height="18" rx="1"/></svg></span>
 			Stats
-		</a>
-		<a href="#add">
-			<span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg></span>
-			Add
 		</a>
 	</nav>
 `;
@@ -198,20 +183,11 @@ function bootApp(): void {
 
 		screen.innerHTML = "";
 		switch (hash) {
-			case "quiz":
-				renderQuiz(screen);
-				break;
-			case "familiar":
-				renderFamiliar(screen);
-				break;
 			case "search":
 				renderSearch(screen);
 				break;
 			case "stats":
 				renderStats(screen);
-				break;
-			case "add":
-				renderAdd(screen);
 				break;
 			default:
 				renderReview(screen);

@@ -145,6 +145,81 @@ describe("notes search API", () => {
 		expect(body.notes[0].noteId).toBe("note-jp");
 	});
 
+	it("GET /api/notes/search returns known: false for note without known tag", async () => {
+		await seedNote("note-unknown", { fields: { Front: "apple", Back: "苹果" } });
+
+		const res = await makeApp().fetch(
+			new Request("http://localhost/api/notes/search?q=apple"),
+			env,
+		);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as {
+			notes: Array<{ noteId: string; known: boolean }>;
+		};
+		expect(body.notes).toHaveLength(1);
+		expect(body.notes[0].known).toBe(false);
+	});
+
+	it("GET /api/notes/search returns known: true for note with known tag", async () => {
+		await seedNote("note-known", {
+			fields: { Front: "banana", Back: "香蕉" },
+			tags: ["known"],
+		});
+
+		const res = await makeApp().fetch(
+			new Request("http://localhost/api/notes/search?q=banana"),
+			env,
+		);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as {
+			notes: Array<{ noteId: string; known: boolean }>;
+		};
+		expect(body.notes).toHaveLength(1);
+		expect(body.notes[0].known).toBe(true);
+	});
+
+	it("GET /api/notes/search known state changes after mark/unmark familiar", async () => {
+		await seedNote("note-toggle", { fields: { Front: "cherry", Back: "樱桃" } });
+
+		// Initially not known
+		const res1 = await makeApp().fetch(
+			new Request("http://localhost/api/notes/search?q=cherry"),
+			env,
+		);
+		const body1 = (await res1.json()) as {
+			notes: Array<{ known: boolean }>;
+		};
+		expect(body1.notes[0].known).toBe(false);
+
+		// Mark familiar via review API — directly update tags like the familiar route does
+		await env.DB.prepare("UPDATE notes SET tags = ? WHERE id = 'note-toggle'")
+			.bind(JSON.stringify(["known"]))
+			.run();
+
+		const res2 = await makeApp().fetch(
+			new Request("http://localhost/api/notes/search?q=cherry"),
+			env,
+		);
+		const body2 = (await res2.json()) as {
+			notes: Array<{ known: boolean }>;
+		};
+		expect(body2.notes[0].known).toBe(true);
+
+		// Unmark familiar — remove the known tag
+		await env.DB.prepare("UPDATE notes SET tags = ? WHERE id = 'note-toggle'")
+			.bind(JSON.stringify([]))
+			.run();
+
+		const res3 = await makeApp().fetch(
+			new Request("http://localhost/api/notes/search?q=cherry"),
+			env,
+		);
+		const body3 = (await res3.json()) as {
+			notes: Array<{ known: boolean }>;
+		};
+		expect(body3.notes[0].known).toBe(false);
+	});
+
 	it("GET /api/notes/search returns tags", async () => {
 		await seedNote("note-tagged", {
 			fields: { Front: "hello", Back: "你好" },
