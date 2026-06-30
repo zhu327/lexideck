@@ -1095,7 +1095,7 @@ button:disabled:active {
 	position: sticky;
 	top: 0;
 	z-index: 1;
-	padding: var(--space-sm) var(--space-md);
+	padding: var(--space-sm) var(--space-md) var(--space-md);
 	border-bottom: 1px solid var(--divider-soft);
 	background: var(--surface);
 }
@@ -1116,7 +1116,9 @@ button:disabled:active {
 		"position position position"
 		"prev . next";
 	align-items: center;
-	gap: var(--space-sm);
+	column-gap: var(--space-sm);
+	row-gap: var(--space-xl);
+	padding-top: var(--space-md);
 }
 
 .search-sheet-prev,
@@ -1637,6 +1639,7 @@ button:disabled:active {
 		grid-template-areas:
 			"position position position"
 			"prev . next";
+		row-gap: var(--space-sm);
 		padding-top: var(--space-sm);
 	}
 
