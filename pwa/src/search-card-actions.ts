@@ -31,14 +31,14 @@ export function attachCardActions(
 	const onClick = async (e: Event) => {
 		const target = e.target as HTMLElement;
 
-		// Row click (not on a button) → expand/collapse
+		// Row click (not on a button) → open/close the detail sheet
 		if (target.tagName !== "BUTTON") {
 			const row = target.closest(".search-row") as HTMLElement | null;
 			if (!row?.dataset.noteId) return;
 			if (expandedNoteId === row.dataset.noteId) {
 				collapseNote(results);
 			} else {
-				await expandNote(row, row.dataset.noteId, noteCache);
+				await openNoteSheet(results, row.dataset.noteId, noteCache, onClick);
 			}
 			return;
 		}
@@ -46,7 +46,13 @@ export function attachCardActions(
 		const btn = target as HTMLButtonElement;
 		e.stopPropagation();
 
-		if (btn.classList.contains("search-known-btn")) {
+		if (btn.classList.contains("search-sheet-close")) {
+			collapseNote(results);
+		} else if (btn.classList.contains("search-sheet-prev")) {
+			await navigateSheet(results, noteCache, -1, onClick);
+		} else if (btn.classList.contains("search-sheet-next")) {
+			await navigateSheet(results, noteCache, 1, onClick);
+		} else if (btn.classList.contains("search-known-btn")) {
 			await handleKnown(btn, results, noteCache);
 		} else if (btn.classList.contains("search-delete-btn")) {
 			await handleDelete(btn, results, noteCache, onDeleted);
@@ -71,7 +77,8 @@ async function handleKnown(
 ): Promise<void> {
 	const container =
 		(btn.closest(".search-row") as HTMLElement | null) ??
-		(btn.closest(".search-expanded") as HTMLElement | null);
+		(btn.closest(".search-expanded") as HTMLElement | null) ??
+		(btn.closest(".search-sheet") as HTMLElement | null);
 	if (!container) return;
 	const noteId = container.dataset.noteId;
 	if (!noteId) return;
@@ -94,9 +101,15 @@ async function handleKnown(
 		if (cached) cached.known = !isKnown;
 
 		// Sync the other button (row ↔ expanded card)
-		const otherSelector = `${container.classList.contains("search-row") ? ".search-expanded" : ".search-row"}[data-note-id="${noteId}"] .search-known-btn`;
-		const otherBtn = results.querySelector(otherSelector) as HTMLButtonElement | null;
-		if (otherBtn) applyKnownState(otherBtn, !isKnown);
+		const rowBtn = results.querySelector(
+			`.search-row[data-note-id="${noteId}"] .search-known-btn`,
+		) as HTMLButtonElement | null;
+		const sheetBtn = document.body.querySelector(
+			`.search-sheet[data-note-id="${noteId}"] .search-known-btn`,
+		) as HTMLButtonElement | null;
+		for (const otherBtn of [rowBtn, sheetBtn]) {
+			if (otherBtn && otherBtn !== btn) applyKnownState(otherBtn, !isKnown);
+		}
 	} catch (err) {
 		btn.textContent = originalText ?? "";
 		btn.className = originalClass;
@@ -134,7 +147,9 @@ async function handleDelete(
 }
 
 async function handleEnrich(btn: HTMLButtonElement): Promise<void> {
-	const card = btn.closest(".search-expanded") as HTMLElement | null;
+	const card =
+		(btn.closest(".search-expanded") as HTMLElement | null) ??
+		(btn.closest(".search-sheet") as HTMLElement | null);
 	if (!card) return;
 	const noteId = card.dataset.noteId;
 	if (!noteId) return;
@@ -173,51 +188,93 @@ function applyKnownState(btn: HTMLButtonElement, known: boolean): void {
 
 /* ── Expand / collapse ───────────────────────────────── */
 
-async function expandNote(
-	row: HTMLElement,
+async function openNoteSheet(
+	results: HTMLElement,
 	noteId: string,
 	noteCache: Map<string, NoteSearchResult>,
+	onClick: (e: Event) => Promise<void>,
 ): Promise<void> {
-	collapseNote(row.parentElement as HTMLElement);
+	collapseNote(results);
 
 	const note = noteCache.get(noteId);
 	if (!note) return;
 
-	const expandedDiv = document.createElement("div");
-	expandedDiv.className = "search-expanded";
-	expandedDiv.dataset.noteId = noteId;
-	expandedDiv.innerHTML = '<div class="search-loading">Loading...</div>';
-	row.parentNode?.insertBefore(expandedDiv, row.nextSibling);
-	expandedNoteId = noteId;
+	const noteIds = visibleNoteIds(results, noteCache);
+	const index = noteIds.indexOf(noteId);
+	const backdrop = document.createElement("div");
+	backdrop.className = "search-sheet-backdrop";
+	const sheet = document.createElement("section");
+	sheet.className = "search-sheet";
+	sheet.dataset.noteId = noteId;
+	sheet.setAttribute("role", "dialog");
+	sheet.setAttribute("aria-modal", "true");
+	sheet.addEventListener("click", onClick);
 
 	const frontKey = Object.keys(note.fields)[0] ?? "";
 	const frontText = note.fields[frontKey] ?? "";
 	const fieldsHtml = renderFields(note.fields, frontKey);
 
-	expandedDiv.innerHTML = `
-		<div class="search-expanded-content">
-			<div class="search-expanded-header">
-				<div class="search-expanded-front">${frontText}</div>
-				<button type="button" class="search-tts-btn secondary" data-text="${escapeHtml(frontText)}" title="Listen">🔊</button>
-			</div>
-			<div class="search-expanded-fields">
-				${fieldsHtml}
-			</div>
-			<div class="search-expanded-actions">
-				<button type="button" class="search-known-btn ${note.known ? "known" : "secondary"}" data-known="${note.known}">
-					${note.known ? "Unmark" : "Mark Known"}
-				</button>
-			</div>
-			<div class="search-enrich-area">
-				<div class="search-loading">Loading enrichment...</div>
-			</div>
-			<div class="search-enrich-actions">
-				<button type="button" class="search-enrich-btn secondary">Enrich</button>
-			</div>
+	const header = document.createElement("div");
+	header.className = "search-sheet-header";
+	const grabber = document.createElement("div");
+	grabber.className = "search-sheet-grabber";
+	grabber.setAttribute("aria-hidden", "true");
+	const nav = document.createElement("div");
+	nav.className = "search-sheet-nav";
+	nav.setAttribute("aria-label", "Navigate search results");
+	header.appendChild(grabber);
+	header.appendChild(nav);
+	const prevBtn = document.createElement("button");
+	prevBtn.type = "button";
+	prevBtn.className = "search-sheet-prev secondary";
+	prevBtn.textContent = "‹ Prev";
+	prevBtn.disabled = index <= 0;
+
+	const position = document.createElement("span");
+	position.className = "search-sheet-position";
+	position.textContent = `${index + 1} / ${noteIds.length}`;
+
+	const nextBtn = document.createElement("button");
+	nextBtn.type = "button";
+	nextBtn.className = "search-sheet-next secondary";
+	nextBtn.textContent = "Next ›";
+	nextBtn.disabled = index < 0 || index >= noteIds.length - 1;
+
+	const closeBtn = document.createElement("button");
+	closeBtn.type = "button";
+	closeBtn.className = "search-sheet-close secondary";
+	closeBtn.textContent = "×";
+
+	nav.appendChild(prevBtn);
+	nav.appendChild(position);
+	nav.appendChild(nextBtn);
+	nav.appendChild(closeBtn);
+
+	const content = document.createElement("div");
+	content.className = "search-expanded-content search-sheet-content";
+	content.innerHTML = `
+		<div class="search-expanded-header">
+			<div class="search-expanded-front">${frontText}</div>
+			<button type="button" class="search-tts-btn secondary" data-text="${escapeHtml(frontText)}" title="Listen">🔊</button>
+		</div>
+		<div class="search-expanded-fields">
+			${fieldsHtml}
+		</div>
+		<div class="search-enrich-actions">
+			<button type="button" class="search-enrich-btn secondary">Enrich</button>
+		</div>
+		<div class="search-enrich-area">
+			<div class="search-loading">Loading enrichment...</div>
 		</div>
 	`;
 
-	const enrichArea = expandedDiv.querySelector(".search-enrich-area") as HTMLElement | null;
+	sheet.appendChild(header);
+	sheet.appendChild(content);
+	backdrop.appendChild(sheet);
+	document.body.appendChild(backdrop);
+	expandedNoteId = noteId;
+
+	const enrichArea = sheet.querySelector(".search-enrich-area") as HTMLElement | null;
 
 	try {
 		const enrichment = await fetchEnrichment(noteId);
@@ -225,9 +282,7 @@ async function expandNote(
 			if (enrichment) {
 				enrichArea.innerHTML = "";
 				displayEnrichment(enrichArea, enrichment);
-				const enrichBtn = expandedDiv.querySelector(
-					".search-enrich-btn",
-				) as HTMLButtonElement | null;
+				const enrichBtn = sheet.querySelector(".search-enrich-btn") as HTMLButtonElement | null;
 				if (enrichBtn) enrichBtn.textContent = "Refresh";
 			} else {
 				enrichArea.innerHTML = '<div class="search-not-enriched">Not enriched yet</div>';
@@ -240,7 +295,26 @@ async function expandNote(
 	}
 }
 
+async function navigateSheet(
+	results: HTMLElement,
+	noteCache: Map<string, NoteSearchResult>,
+	direction: -1 | 1,
+	onClick: (e: Event) => Promise<void>,
+): Promise<void> {
+	if (!expandedNoteId) return;
+	const noteIds = visibleNoteIds(results, noteCache);
+	const nextId = noteIds[noteIds.indexOf(expandedNoteId) + direction];
+	if (nextId) await openNoteSheet(results, nextId, noteCache, onClick);
+}
+
+function visibleNoteIds(results: HTMLElement, noteCache: Map<string, NoteSearchResult>): string[] {
+	return Array.from(results.querySelectorAll<HTMLElement>(".search-row"))
+		.map((row) => row.dataset.noteId)
+		.filter((noteId): noteId is string => Boolean(noteId && noteCache.has(noteId)));
+}
+
 function collapseNote(results: HTMLElement): void {
 	results.querySelector(".search-expanded")?.remove();
+	document.body.querySelector(".search-sheet-backdrop")?.remove();
 	expandedNoteId = null;
 }
