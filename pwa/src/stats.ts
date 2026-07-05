@@ -95,6 +95,19 @@ function escapeHtml(s: string): string {
 	});
 }
 
+function scrollActivityToLatest(root: HTMLElement): void {
+	const scroller = root.querySelector<HTMLElement>(".contrib-scroll");
+	if (!scroller) return;
+	const scroll = () => {
+		scroller.scrollLeft = scroller.scrollWidth;
+	};
+	if (typeof requestAnimationFrame === "function") {
+		requestAnimationFrame(scroll);
+	} else {
+		scroll();
+	}
+}
+
 function renderActivityGraph(days: ActivityDay[], total: number): string {
 	if (days.length === 0) return "";
 	const weeks = buildGraph(days);
@@ -201,6 +214,7 @@ export async function renderStats(root: HTMLElement): Promise<void> {
 			</div>
 			${activity ? renderActivityGraph(activity.days, activity.total) : ""}
 		`;
+		if (activity) scrollActivityToLatest(area);
 	} catch (err) {
 		area.textContent = `Failed to load stats: ${errorMessage(err)}`;
 	}
