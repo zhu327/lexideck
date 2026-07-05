@@ -71,6 +71,14 @@ describe("D1 migrations", () => {
 		}
 	});
 
+	it("applies migration 0004: adds revlog user/time index", async () => {
+		const idx = await env.DB.prepare(
+			"SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'revlog' " +
+				"AND name = 'idx_revlog_user_time'",
+		).first<{ name: string }>();
+		expect(idx).not.toBeNull();
+	});
+
 	it("seeds the Default deck for user local", async () => {
 		const deck = await env.DB.prepare(
 			"SELECT id, name, user_id FROM decks WHERE user_id = 'local' AND name = 'Default'",

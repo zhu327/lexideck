@@ -5,6 +5,7 @@ import { type AuthUser, apiKeyAuth } from "../src/auth/apiKey";
 import { createDbClient } from "../src/db/client";
 import type { Env } from "../src/env";
 import { createStatsApp } from "../src/stats/router";
+import { parseTzOffset, todayStartMs } from "../src/utils/timezone";
 
 const DECK = "deck-default-local";
 const MODEL = "model-basic-local";
@@ -151,5 +152,61 @@ describe("stats API", () => {
 		expect(body.newCards).toBe(2);
 		expect(body.learningCards).toBe(1);
 		expect(body.reviewCards).toBe(2);
+	});
+});
+
+describe("stats activity API", () => {
+	it("returns an empty year of zero days when no reviews exist", async () => {
+		const res = await makeApp().fetch(
+			new Request("http://localhost/api/stats/activity?days=7"),
+			env,
+		);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { days: { date: string; count: number }[]; total: number };
+		expect(body.total).toBe(0);
+		expect(body.days).toHaveLength(7);
+		for (const d of body.days) expect(d.count).toBe(0);
+	});
+
+	it("aggregates reviews per local day and sums total", async () => {
+		await seedNote("note-a1");
+		await seedCard("card-a1", "note-a1", 0);
+		const now = Date.now();
+		const todayStart = todayStartMs(now, parseTzOffset(env.TIMEZONE));
+
+		// 3 reviews today, 2 reviews yesterday
+		await seedRevlog("rev-a1-t1", "card-a1", 3, todayStart + 1000);
+		await seedRevlog("rev-a1-t2", "card-a1", 3, todayStart + 2000);
+		await seedRevlog("rev-a1-t3", "card-a1", 3, todayStart + 3000);
+		await seedRevlog("rev-a1-y1", "card-a1", 3, todayStart - 86_400_000 + 1000);
+		await seedRevlog("rev-a1-y2", "card-a1", 3, todayStart - 86_400_000 + 2000);
+		await seedRevlog("rev-a1-future", "card-a1", 3, Date.now() + 2 * 86_400_000);
+
+		const res = await makeApp().fetch(
+			new Request("http://localhost/api/stats/activity?days=2"),
+			env,
+		);
+		const body = (await res.json()) as { days: { date: string; count: number }[]; total: number };
+		expect(body.total).toBe(5);
+		expect(body.days).toHaveLength(2);
+		// last day is today
+		expect(body.days[1].count).toBe(3);
+		expect(body.days[0].count).toBe(2);
+	});
+
+	it("clamps the days query param to [1, 365]", async () => {
+		const huge = await makeApp().fetch(
+			new Request("http://localhost/api/stats/activity?days=99999"),
+			env,
+		);
+		const body = (await huge.json()) as { days: unknown[] };
+		expect(body.days).toHaveLength(365);
+
+		const tiny = await makeApp().fetch(
+			new Request("http://localhost/api/stats/activity?days=0"),
+			env,
+		);
+		const tinyBody = (await tiny.json()) as { days: unknown[] };
+		expect(tinyBody.days).toHaveLength(1);
 	});
 });

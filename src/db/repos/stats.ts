@@ -1,5 +1,5 @@
-import type { DbClient } from "../client";
 import { todayStartMs } from "../../utils/timezone";
+import type { DbClient } from "../client";
 
 export interface StatsSummary {
 	todayReviews: number;
@@ -9,6 +9,28 @@ export interface StatsSummary {
 	reviewCards: number;
 	streak: number;
 	todayRetention: number | null;
+}
+
+export interface ActivityDay {
+	/** Calendar date in YYYY-MM-DD (local timezone). */
+	date: string;
+	count: number;
+}
+
+export interface DailyActivity {
+	days: ActivityDay[];
+	total: number;
+}
+
+const MS_PER_DAY = 86_400_000;
+
+/** Format a local day-number (tz-adjusted) as a YYYY-MM-DD calendar date. */
+function dayToDateKey(day: number): string {
+	const d = new Date(day * MS_PER_DAY);
+	const y = d.getUTCFullYear();
+	const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+	const dd = String(d.getUTCDate()).padStart(2, "0");
+	return `${y}-${m}-${dd}`;
 }
 
 export async function getStatsSummary(
@@ -77,4 +99,50 @@ export async function getStatsSummary(
 		streak,
 		todayRetention,
 	};
+}
+
+/**
+ * Return per-day review counts for the last `lookbackDays` days (inclusive of
+ * today). Days with no reviews are filled with count 0 so the frontend can lay
+ * out a continuous contribution graph. Days are bucketed in the user's local
+ * timezone (matching the streak calculation).
+ */
+export async function getDailyActivity(
+	db: DbClient,
+	userId: string,
+	now: number,
+	tzOffsetHours = 8,
+	lookbackDays = 365,
+): Promise<DailyActivity> {
+	const tzMs = tzOffsetHours * 3_600_000;
+	const todayStart = todayStartMs(now, tzOffsetHours);
+	const todayDay = Math.floor((todayStart + tzMs) / MS_PER_DAY);
+	const startDay = todayDay - (lookbackDays - 1);
+	const sinceMs = startDay * MS_PER_DAY - tzMs;
+	const tomorrowStart = todayStart + MS_PER_DAY;
+
+	const rows = await db.query<{ day: number; cnt: number }>(
+		"SELECT CAST(((review_time + ?) / 86400000) AS INTEGER) AS day, " +
+			"COUNT(*) AS cnt " +
+			"FROM revlog WHERE user_id = ? AND review_time >= ? AND review_time < ? GROUP BY day",
+		tzMs,
+		userId,
+		sinceMs,
+		tomorrowStart,
+	);
+
+	const counts = new Map<number, number>();
+	let total = 0;
+	for (const row of rows) {
+		const c = Number(row.cnt);
+		counts.set(Number(row.day), c);
+		total += c;
+	}
+
+	const days: ActivityDay[] = [];
+	for (let day = startDay; day <= todayDay; day++) {
+		days.push({ date: dayToDateKey(day), count: counts.get(day) ?? 0 });
+	}
+
+	return { days, total };
 }

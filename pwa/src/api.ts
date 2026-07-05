@@ -359,7 +359,22 @@ export interface StatsSummary {
 	todayRetention: number | null;
 }
 
+export interface ActivityDay {
+	date: string;
+	count: number;
+}
+
+export interface DailyActivity {
+	days: ActivityDay[];
+	total: number;
+}
+
 export async function fetchStats(): Promise<StatsSummary> {
 	const res = await authFetch("/api/stats/summary");
 	return expectJson<StatsSummary>(res);
+}
+
+export async function fetchActivity(days = 365): Promise<DailyActivity> {
+	const res = await authFetch(`/api/stats/activity?days=${days}`);
+	return expectJson<DailyActivity>(res);
 }
