@@ -1,10 +1,4 @@
-import {
-	buildDueUrl,
-	buildFamiliarUrl,
-	buildQuizUrl,
-	enrichUnavailableMessage,
-	type Rating,
-} from "./helpers";
+import { buildDueUrl, enrichUnavailableMessage, type Rating } from "./helpers";
 import { addReviewOp, removeCardFromReviewQueue } from "./offline-review";
 
 /* ── API Key Management ────────────────────────────────── */
@@ -42,12 +36,6 @@ export interface ReviewCardView {
 	tags: string[];
 	state: number;
 	due: number;
-}
-
-export interface FamiliarCard {
-	noteId: string;
-	front: string;
-	known: boolean;
 }
 
 export interface Enrichment {
@@ -224,12 +212,6 @@ export async function submitReview(
 	return { due: body.due };
 }
 
-export async function fetchQuiz(deckName?: string | null, limit = 20): Promise<ReviewCardView[]> {
-	const res = await authFetch(`/api/review/quiz${buildQuizUrl(deckName ?? null, limit)}`);
-	const body = await expectJson<{ cards: ReviewCardView[] }>(res);
-	return body.cards;
-}
-
 export async function markFamiliar(noteId: string): Promise<void> {
 	const res = await authFetch("/api/review/familiar", {
 		method: "POST",
@@ -237,12 +219,6 @@ export async function markFamiliar(noteId: string): Promise<void> {
 		body: JSON.stringify({ noteId }),
 	});
 	await expectOk(res);
-}
-
-export async function fetchFamiliarList(deckName?: string | null): Promise<FamiliarCard[]> {
-	const res = await authFetch(`/api/review/familiar${buildFamiliarUrl(deckName)}`);
-	const body = await expectJson<{ cards: FamiliarCard[] }>(res);
-	return body.cards;
 }
 
 export async function unmarkFamiliar(noteId: string): Promise<void> {
@@ -254,39 +230,10 @@ export async function unmarkFamiliar(noteId: string): Promise<void> {
 	await expectOk(res);
 }
 
-export async function addNote(req: {
-	deckName: string;
-	modelName: string;
-	fields: Record<string, string>;
-	tags?: string[];
-}): Promise<{ ankiId: number; noteId: string }> {
-	const res = await authFetch("/api/notes", {
-		method: "POST",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify(req),
-	});
-	if (res.status === 409) {
-		throw new Error("duplicate");
-	}
-	return expectJson<{ ankiId: number; noteId: string }>(res);
-}
-
 export async function fetchDeckNames(): Promise<string[]> {
 	const res = await authFetch("/api/decks");
 	const body = await expectJson<{ decks: string[] }>(res);
 	return body.decks;
-}
-
-export async function fetchModelNames(): Promise<string[]> {
-	const res = await authFetch("/api/models");
-	const body = await expectJson<{ models: string[] }>(res);
-	return body.models;
-}
-
-export async function fetchModelFields(modelName: string): Promise<string[]> {
-	const res = await authFetch(`/api/models/${encodeURIComponent(modelName)}/fields`);
-	const body = await expectJson<{ fields: string[] }>(res);
-	return body.fields;
 }
 
 export interface NoteSearchResult {

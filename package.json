@@ -4,7 +4,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"typecheck": "tsc --noEmit && tsc --noEmit -p .pi/extensions/lexideck-word/tsconfig.json",
+		"typecheck": "tsc --noEmit && tsc --noEmit -p pwa/tsconfig.json",
 		"test": "vitest run",
 		"test:extensions": "vitest run --config vitest.extension.config.ts",
 		"lint": "biome check .",

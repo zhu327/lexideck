@@ -1,4 +1,5 @@
 import { fetchEnrichment, ReviewSubmitError, submitReview } from "./api";
+import { adjustCachedDueTotal, setCachedDueTotal } from "./badge";
 import {
 	buildCardHTML,
 	disableButtons,
@@ -27,6 +28,18 @@ import { speak, stopSpeaking } from "./tts";
 // Module-level cleanup so re-entering renderReview (route change) cleans up stale bindings.
 let activeCleanup: (() => void) | null = null;
 
+/**
+ * Remove any keyboard bindings and speech left over from an active review
+ * screen. Called when navigating away from #review (see main.ts route()).
+ */
+export function cleanupReview(): void {
+	if (activeCleanup) {
+		activeCleanup();
+		activeCleanup = null;
+	}
+	stopSpeaking();
+}
+
 export async function renderReview(root: HTMLElement): Promise<void> {
 	const selectedDeck = localStorage.getItem("selectedDeck") || null;
 
@@ -49,17 +62,17 @@ export async function renderReview(root: HTMLElement): Promise<void> {
 	const loadMoreWrap = root.querySelector("#load-more-wrap");
 	if (!(cardArea instanceof HTMLElement) || !(loadMoreWrap instanceof HTMLElement)) return;
 
-	// Cleanup any bindings from a previous renderReview call
-	if (activeCleanup) {
-		activeCleanup();
-		activeCleanup = null;
-	}
-	stopSpeaking();
+	// Cleanup any bindings from a previous renderReview call (or a stale route)
+	cleanupReview();
 
 	const session = createSession(selectedDeck);
+	session.onComplete = () => {
+		renderReview(root);
+	};
 
 	try {
 		await loadInitialBatch(session);
+		setCachedDueTotal(session.total);
 
 		const syncStatusEl = root.querySelector("#sync-status");
 		if (syncStatusEl instanceof HTMLElement) {
@@ -103,7 +116,7 @@ async function showCard(
 		try {
 			const nextCards = await loadNextBatch(session);
 			if (nextCards === null) {
-				showCompletionPage(area, session.total);
+				showCompletionPage(area, session.total, session.onComplete ?? (() => {}));
 				loadMoreWrap.hidden = true;
 				return;
 			}
@@ -116,8 +129,12 @@ async function showCard(
 	}
 
 	const card = session.cards[index];
-	const values = Object.values(card.fields);
-	const front = values[0] ?? "";
+	// Read the front lazily so edits to session.cards[index] are picked up
+	// by TTS and the flip action.
+	const currentFront = (): string => {
+		const current = session.cards[index] ?? card;
+		return Object.values(current.fields)[0] ?? "";
+	};
 
 	// Build card DOM
 	area.innerHTML = buildCardHTML();
@@ -150,6 +167,7 @@ async function showCard(
 				await delay(600);
 				await showCard(area, loadMoreWrap, session, index + 1);
 			} else {
+				adjustCachedDueTotal(-1);
 				showIntervalFeedback(area, result.due);
 				await delay(800);
 				await showCard(area, loadMoreWrap, session, index + 1);
@@ -186,7 +204,7 @@ async function showCard(
 		if (flipBtn instanceof HTMLButtonElement) flipBtn.hidden = true;
 		area.classList.add("flipping");
 		setTimeout(() => area.classList.remove("flipping"), 300);
-		speak(front);
+		speak(currentFront());
 		// Cleanup front-side bindings, register rating shortcuts
 		if (session.cleanupKeys) {
 			session.cleanupKeys();
@@ -201,11 +219,21 @@ async function showCard(
 		activeCleanup = session.cleanupKeys;
 		renderRatings(ratingsEl, submitRating);
 
-		// Auto-load cached enrichment
-		const cached = await fetchEnrichment(card.noteId);
-		if (cached) {
-			if (enrichResult instanceof HTMLElement) {
+		// Auto-load enrichment — cached per note for this session to avoid
+		// re-fetching the same note on every flip.
+		const cached = session.enrichmentCache.get(card.noteId);
+		if (cached !== undefined) {
+			if (cached && enrichResult instanceof HTMLElement) {
 				displayEnrichment(enrichResult, cached);
+				if (enrichBtn instanceof HTMLButtonElement) enrichBtn.textContent = "Refresh";
+			}
+			return;
+		}
+		const fetched = await fetchEnrichment(card.noteId);
+		session.enrichmentCache.set(card.noteId, fetched);
+		if (fetched) {
+			if (enrichResult instanceof HTMLElement) {
+				displayEnrichment(enrichResult, fetched);
 			}
 			if (enrichBtn instanceof HTMLButtonElement) {
 				enrichBtn.textContent = "Refresh";
@@ -214,7 +242,7 @@ async function showCard(
 	}
 
 	if (ttsBtn instanceof HTMLButtonElement) {
-		ttsBtn.addEventListener("click", () => speak(front));
+		ttsBtn.addEventListener("click", () => speak(currentFront()));
 	}
 
 	if (flipBtn instanceof HTMLButtonElement) {
@@ -233,18 +261,17 @@ async function showCard(
 			openEditModal(card, (newFields) => {
 				session.cards[index] = { ...card, fields: newFields };
 				// Re-render card display with updated fields
-				const updatedValues = Object.values(newFields);
 				const updatedKeys = Object.keys(newFields);
-				setHtml(area, ".card-word", updatedValues[0] ?? "");
-				const backEl2 = area.querySelector(".card-back");
-				if (backEl2 instanceof HTMLElement)
-					backEl2.innerHTML = renderFields(newFields, updatedKeys[0] ?? "");
+				setHtml(area, ".card-word", newFields[updatedKeys[0] ?? ""] ?? "");
+				setHtml(area, ".card-back", renderFields(newFields, updatedKeys[0] ?? ""));
 			});
 		});
 	}
 
 	if (enrichBtn instanceof HTMLButtonElement && enrichResult instanceof HTMLElement) {
-		setupEnrichButton(enrichBtn, enrichResult, card.noteId);
+		setupEnrichButton(enrichBtn, enrichResult, card.noteId, (enrichment) => {
+			session.enrichmentCache.set(card.noteId, enrichment);
+		});
 	}
 
 	// Show "Load more" at end of batch

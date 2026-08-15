@@ -28,20 +28,6 @@ export function buildDueUrl(deckName: string | null, limit: number, offset?: num
 }
 
 /**
- * Build the query string for `GET /api/review/quiz`.
- */
-export function buildQuizUrl(deckName: string | null, limit: number): string {
-	return buildDueUrl(deckName, limit);
-}
-
-/**
- * Build the query string for `GET /api/review/familiar`. Optional deck filter.
- */
-export function buildFamiliarUrl(deckName?: string | null): string {
-	return deckName ? `?deck=${encodeURIComponent(deckName)}` : "";
-}
-
-/**
  * Human message for a failed `/api/notes/:id/enrich` request. HTTP 503 means
  * the LLM backing the enrichment endpoint is not configured; anything else is
  * a generic transient/unknown failure.

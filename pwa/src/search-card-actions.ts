@@ -9,7 +9,7 @@ import {
 	unmarkFamiliar,
 } from "./api";
 import { displayEnrichment } from "./card-renderer";
-import { escapeHtml } from "./dom";
+import { escapeHtml, sanitizeFieldHtml } from "./dom";
 import { renderFields } from "./fields";
 import { errorMessage } from "./helpers";
 import { speak } from "./tts";
@@ -163,14 +163,16 @@ async function handleEnrich(btn: HTMLButtonElement): Promise<void> {
 	try {
 		const result = await enrichNote(noteId);
 		if ("error" in result) {
-			enrichArea.innerHTML = `<div class="search-enrich-error">${result.error}</div>`;
+			enrichArea.innerHTML = `<div class="search-enrich-error">${escapeHtml(result.error)}</div>`;
 		} else {
 			enrichArea.innerHTML = "";
 			displayEnrichment(enrichArea, result);
 		}
 		btn.textContent = "Refresh";
 	} catch (err) {
-		enrichArea.innerHTML = `<div class="search-enrich-error">Failed: ${errorMessage(err)}</div>`;
+		enrichArea.innerHTML = `<div class="search-enrich-error">Failed: ${escapeHtml(
+			errorMessage(err),
+		)}</div>`;
 		btn.textContent = "Retry";
 	} finally {
 		btn.disabled = false;
@@ -254,7 +256,7 @@ async function openNoteSheet(
 	content.className = "search-expanded-content search-sheet-content";
 	content.innerHTML = `
 		<div class="search-expanded-header">
-			<div class="search-expanded-front">${frontText}</div>
+			<div class="search-expanded-front">${sanitizeFieldHtml(frontText)}</div>
 			<button type="button" class="search-tts-btn secondary" data-text="${escapeHtml(frontText)}" title="Listen">🔊</button>
 		</div>
 		<div class="search-expanded-fields">
@@ -290,7 +292,9 @@ async function openNoteSheet(
 		}
 	} catch (err) {
 		if (enrichArea) {
-			enrichArea.innerHTML = `<div class="search-enrich-error">Failed to load: ${errorMessage(err)}</div>`;
+			enrichArea.innerHTML = `<div class="search-enrich-error">Failed to load: ${escapeHtml(
+				errorMessage(err),
+			)}</div>`;
 		}
 	}
 }

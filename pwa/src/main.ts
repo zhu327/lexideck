@@ -1,6 +1,7 @@
 import "./styles.css";
-import { fetchDeckNames, fetchDue, getApiKey, setApiKey } from "./api";
-import { renderReview } from "./review";
+import { clearApiKey, fetchDeckNames, getApiKey, setApiKey } from "./api";
+import { invalidateDueTotalCache, setBadge, updateBadge } from "./badge";
+import { cleanupReview, renderReview } from "./review";
 import { syncReviewOps } from "./review-sync";
 import { renderSearch } from "./search";
 import { renderStats } from "./stats";
@@ -41,7 +42,7 @@ function renderSetup(app: HTMLElement): void {
 			});
 			if (!res.ok) throw new Error("Invalid API key");
 			setApiKey(key);
-			bootApp();
+			bootApp(app);
 		} catch {
 			error.textContent = "Invalid API key. Please try again.";
 			error.hidden = false;
@@ -58,7 +59,7 @@ function renderSetup(app: HTMLElement): void {
 const app = document.getElementById("app");
 if (!app) throw new Error("#app element not found");
 
-function bootApp(): void {
+function bootApp(app: HTMLElement): void {
 	app.innerHTML = `
 	<header>
 		<h1>Anki Vocab</h1>
@@ -66,6 +67,7 @@ function bootApp(): void {
 			<select id="deck-selector">
 				<option value="">All Decks</option>
 			</select>
+			<button id="logout-btn" class="secondary" type="button" title="Disconnect this device">Log out</button>
 		</div>
 	</header>
 	<div id="offline-indicator" class="offline-indicator">You're offline — changes will sync when reconnected</div>
@@ -95,7 +97,7 @@ function bootApp(): void {
 
 	/* ── Offline Detection ────────────────────────────────── */
 
-	function updateOnlineStatus(): void {
+	const updateOnlineStatus = (): void => {
 		const online = navigator.onLine;
 		if (online) {
 			offlineIndicator.classList.remove("visible");
@@ -103,7 +105,7 @@ function bootApp(): void {
 		} else {
 			offlineIndicator.classList.add("visible");
 		}
-	}
+	};
 
 	window.addEventListener("online", updateOnlineStatus);
 	window.addEventListener("offline", updateOnlineStatus);
@@ -111,29 +113,16 @@ function bootApp(): void {
 
 	/* ── Badge API — show pending review count ────────────── */
 
-	async function updateBadge(): Promise<void> {
-		if (!("setAppBadge" in navigator)) return;
-		try {
-			const deck = localStorage.getItem("selectedDeck") || null;
-			const { total } = await fetchDue(deck, 1, 0);
-			if (total > 0) {
-				await (navigator as Navigator & { setAppBadge: (c: number) => Promise<void> }).setAppBadge(
-					total,
-				);
-			} else {
-				await (navigator as Navigator & { clearAppBadge: () => Promise<void> }).clearAppBadge();
-			}
-		} catch {
-			// Badge API unavailable or fetch failed — ignore
-		}
-	}
+	const selectedDeck = (): string | null => localStorage.getItem("selectedDeck") || null;
 
-	// Update badge on load and after reviews
-	updateBadge().catch(() => {});
+	// Update badge on load and after reviews. updateBadge() reuses the
+	// cached due-total written by the review session, so this no longer
+	// fires a duplicate `GET /api/review/due` next to renderReview().
+	updateBadge(selectedDeck()).catch(() => {});
 	syncReviewOps().catch(() => {});
 	window.addEventListener("hashchange", () => {
 		if (window.location.hash === "#review" || !window.location.hash) {
-			updateBadge().catch(() => {});
+			updateBadge(selectedDeck()).catch(() => {});
 		}
 	});
 
@@ -163,13 +152,24 @@ function bootApp(): void {
 			} else {
 				localStorage.removeItem("selectedDeck");
 			}
+			invalidateDueTotalCache();
 			route();
+		});
+	}
+
+	/* ── Logout ───────────────────────────────────────────── */
+
+	const logoutBtn = document.getElementById("logout-btn");
+	if (logoutBtn instanceof HTMLButtonElement) {
+		logoutBtn.addEventListener("click", () => {
+			clearApiKey();
+			location.reload();
 		});
 	}
 
 	/* ── Routing ──────────────────────────────────────────── */
 
-	function route(): void {
+	const route = (): void => {
 		const hash = window.location.hash.replace(/^#/, "") || "review";
 
 		// Highlight active tab
@@ -180,6 +180,10 @@ function bootApp(): void {
 				link.classList.toggle("active", linkHash === hash);
 			}
 		}
+
+		// Tear down review-screen keyboard bindings before switching screens so
+		// stale shortcuts can't submit ratings from other tabs.
+		cleanupReview();
 
 		screen.innerHTML = "";
 		switch (hash) {
@@ -197,9 +201,9 @@ function bootApp(): void {
 		// After a route change, if the page is a review page, update badge
 		if (hash === "review" || !hash) {
 			syncReviewOps().catch(() => {});
-			updateBadge().catch(() => {});
+			updateBadge(selectedDeck()).catch(() => {});
 		}
-	}
+	};
 
 	window.addEventListener("hashchange", route);
 	route();
@@ -209,7 +213,7 @@ function bootApp(): void {
 if (!getApiKey()) {
 	renderSetup(app);
 } else {
-	bootApp();
+	bootApp(app);
 }
 
 /* ── Service Worker Registration ──────────────────────── */
@@ -244,18 +248,12 @@ if ("serviceWorker" in navigator) {
 					if (event.data?.type === "trigger-sync") {
 						syncReviewOps().catch(() => {});
 					}
+					if (event.data?.type === "trigger-badge-refresh") {
+						// The SW cannot attach the auth header itself; refresh from the page.
+						updateBadge(localStorage.getItem("selectedDeck") || null).catch(() => {});
+					}
 					if (event.data?.type === "due-count" && typeof event.data.count === "number") {
-						if ("setAppBadge" in navigator) {
-							const n = navigator as Navigator & {
-								setAppBadge: (c: number) => Promise<void>;
-								clearAppBadge: () => Promise<void>;
-							};
-							if (event.data.count > 0) {
-								n.setAppBadge(event.data.count).catch(() => {});
-							} else {
-								n.clearAppBadge().catch(() => {});
-							}
-						}
+						setBadge(event.data.count).catch(() => {});
 					}
 				});
 			})

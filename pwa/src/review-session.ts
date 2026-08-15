@@ -1,4 +1,4 @@
-import { fetchDue, type ReviewCardView } from "./api";
+import { type Enrichment, fetchDue, type ReviewCardView } from "./api";
 import { errorMessage } from "./helpers";
 import {
 	appendReviewQueueCards,
@@ -18,6 +18,10 @@ export interface ReviewSession {
 	deck: string | null;
 	scope: string;
 	offlineCached: boolean;
+	/** Per-note enrichment cache for this session; null = fetched and absent. */
+	enrichmentCache: Map<string, Enrichment | null>;
+	/** Invoked when the completion page is acknowledged — re-renders review. */
+	onComplete?: () => void;
 }
 
 /**
@@ -32,6 +36,7 @@ export function createSession(deck: string | null): ReviewSession {
 		deck,
 		scope: scopeForDeck(deck),
 		offlineCached: false,
+		enrichmentCache: new Map(),
 	};
 }
 

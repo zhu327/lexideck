@@ -3,7 +3,11 @@
    Linear dark-canvas PWA · offline-first architecture
    ─────────────────────────────────────────────────────── */
 
-const CACHE_NAME = "anki-vocab-v4";
+// The `anki-vocab-<version>` cache name below is rewritten at build time (see
+// swPrecachePlugin in vite.config.ts) — the version is a hash of the final
+// sw.js content, so any asset change automatically produces a new cache name.
+// In dev the placeholder string stays as a stable literal.
+const CACHE_NAME = "anki-vocab-__SW_CACHE_VERSION__";
 const RUNTIME_CACHE = "anki-vocab-runtime";
 const SYNC_TAG_REVIEWS = "sync-reviews";
 const PERIODIC_TAG_CHECK = "periodic-check";
@@ -19,6 +23,11 @@ const APP_SHELL = [
 	"/icon-192.png",
 	"/icon-512.png",
 ];
+
+// Replaced at build time with the full list of build outputs (including
+// content-hashed /assets/* bundles). In dev this stays empty and only
+// APP_SHELL is precached.
+const PRECACHE_URLS = [];
 
 /* ── Cached API paths (GET requests only) ─────────────── */
 
@@ -40,8 +49,9 @@ self.addEventListener("install", (event) => {
 	event.waitUntil(
 		(async () => {
 			const cache = await caches.open(CACHE_NAME);
+			const urls = [...new Set([...APP_SHELL, ...PRECACHE_URLS])];
 			try {
-				await cache.addAll(APP_SHELL);
+				await cache.addAll(urls);
 			} catch (err) {
 				// Individual asset failures are non-fatal; cache what we can.
 				console.warn("[sw] install: some assets not cached", err);
@@ -197,30 +207,24 @@ async function triggerClientSync() {
 }
 
 /* ═══════════════════════════════════════════════════════
-   Periodic Sync — background badge update
+   Periodic Sync — background badge refresh
    ═══════════════════════════════════════════════════════ */
 
 self.addEventListener("periodicsync", (event) => {
 	if (event.tag === PERIODIC_TAG_CHECK) {
-		event.waitUntil(updateAppBadge());
+		event.waitUntil(requestBadgeRefresh());
 	}
 });
 
-async function updateAppBadge() {
-	try {
-		const res = await fetch("/api/review/due?limit=0");
-		if (res.ok) {
-			const data = await res.json();
-			const count = data?.total ?? 0;
-
-			// Broadcast to all clients
-			const allClients = await clients.matchAll({ type: "window" });
-			for (const client of allClients) {
-				client.postMessage({ type: "due-count", count });
-			}
-		}
-	} catch {
-		// Silently fail; will retry on next periodic sync
+/**
+ * Ask open pages to refresh the badge themselves. The SW cannot fetch
+ * /api/review/due directly because it has no access to the Authorization
+ * token (kept in localStorage on the page).
+ */
+async function requestBadgeRefresh() {
+	const allClients = await clients.matchAll({ type: "window" });
+	for (const client of allClients) {
+		client.postMessage({ type: "trigger-badge-refresh" });
 	}
 }
 
@@ -253,9 +257,7 @@ self.addEventListener("message", (event) => {
 			}
 			break;
 		case "UPDATE_BADGE":
-			if (msg.count !== undefined) {
-				updateAppBadge();
-			}
+			requestBadgeRefresh();
 			break;
 	}
 });

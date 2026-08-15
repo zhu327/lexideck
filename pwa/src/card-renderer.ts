@@ -1,5 +1,5 @@
 import type { Enrichment, ReviewCardView } from "./api";
-import { setHtml, setText } from "./dom";
+import { escapeHtml, setHtml, setText } from "./dom";
 import { renderFields } from "./fields";
 import { formatInterval, RATING_LABELS, type Rating, stateClass, stateLabel } from "./helpers";
 
@@ -40,37 +40,36 @@ export function renderCardFields(
 ): void {
 	const metaEl = area.querySelector(".card-meta");
 	if (metaEl) {
-		metaEl.innerHTML = `<span class="state-badge ${stateClass(card.state)}">${stateLabel(card.state)}</span>${card.deckName} · ${card.modelName}`;
+		metaEl.innerHTML = `<span class="state-badge ${stateClass(card.state)}">${stateLabel(
+			card.state,
+		)}</span>${escapeHtml(card.deckName)} · ${escapeHtml(card.modelName)}`;
 	}
 	const values = Object.values(card.fields);
 	const front = values[0] ?? "";
 	setHtml(area, ".card-word", front);
 	const fieldKeys = Object.keys(card.fields);
 	const frontKey = fieldKeys[0] ?? "";
-	const backHtml = renderFields(card.fields, frontKey);
-	const backEl = area.querySelector(".card-back");
-	if (backEl instanceof HTMLElement) backEl.innerHTML = backHtml;
+	setHtml(area, ".card-back", renderFields(card.fields, frontKey));
 	const current = offset - cardsLength + index + 1;
 	setText(area, ".progress-indicator", `${current} / ${total}`);
 }
 
 /**
  * Render the celebration page when all cards are reviewed.
+ * `onDone` is invoked when the user acknowledges — it should re-render the
+ * review screen (no full page reload).
  */
-export function showCompletionPage(area: HTMLElement, total: number): void {
+export function showCompletionPage(area: HTMLElement, total: number, onDone: () => void): void {
 	area.innerHTML = `
 		<div class="completion">
 			<div class="emoji">🎉</div>
 			<div class="message">今日完成 ${total} 张！</div>
-			<button id="completion-home" class="primary" type="button">Back to Home</button>
+			<button id="completion-home" class="primary" type="button">Done</button>
 		</div>
 	`;
 	const homeBtn = area.querySelector("#completion-home");
 	if (homeBtn instanceof HTMLButtonElement) {
-		homeBtn.addEventListener("click", () => {
-			location.hash = "#review";
-			location.reload();
-		});
+		homeBtn.addEventListener("click", onDone);
 	}
 }
 

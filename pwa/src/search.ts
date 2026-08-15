@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 
 import { downloadApkgExport, type NoteSearchResult, searchNotes } from "./api";
+import { sanitizeFieldHtml } from "./dom";
 import { errorMessage } from "./helpers";
 import { attachCardActions } from "./search-card-actions";
 
@@ -48,6 +49,9 @@ export async function renderSearch(root: HTMLElement): Promise<void> {
 	let loaded = 0;
 	let total = 0;
 	let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+	// Sequence guard: debounce + Enter can overlap slow responses; only the
+	// most recent request may mutate the DOM.
+	let requestSeq = 0;
 
 	// Attach card-action handlers to the results container
 	attachCardActions(results, noteCache, {
@@ -59,6 +63,7 @@ export async function renderSearch(root: HTMLElement): Promise<void> {
 	});
 
 	const doSearch = async (append: boolean) => {
+		const seq = ++requestSeq;
 		const q = input.value.trim();
 		if (!append) {
 			loaded = 0;
@@ -69,6 +74,7 @@ export async function renderSearch(root: HTMLElement): Promise<void> {
 		moreBtn.style.display = "none";
 		try {
 			const res = await searchNotes(q, PAGE_SIZE, loaded);
+			if (seq !== requestSeq) return; // superseded by a newer search
 			total = res.total;
 			if (res.notes.length === 0 && loaded === 0) {
 				status.textContent = "No notes found";
@@ -84,6 +90,7 @@ export async function renderSearch(root: HTMLElement): Promise<void> {
 				moreBtn.style.display = "block";
 			}
 		} catch (err) {
+			if (seq !== requestSeq) return;
 			status.textContent = `Failed: ${errorMessage(err)}`;
 		}
 	};
@@ -139,7 +146,7 @@ function renderNoteRow(note: NoteSearchResult): HTMLElement {
 	const firstField = Object.values(note.fields)[0] ?? "";
 	const front = document.createElement("span");
 	front.className = "search-front";
-	front.innerHTML = firstField;
+	front.innerHTML = sanitizeFieldHtml(firstField);
 
 	const meta = document.createElement("span");
 	meta.className = "search-meta";

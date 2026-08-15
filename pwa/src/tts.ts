@@ -40,10 +40,3 @@ export function stopSpeaking(): void {
 	if (!synth) return;
 	synth.cancel();
 }
-
-/**
- * Check if TTS is available in current browser.
- */
-export function isTtsAvailable(): boolean {
-	return getSpeechSynthesis() !== null;
-}

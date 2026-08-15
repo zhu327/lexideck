@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NoteSearchResult } from "../pwa/src/api";
 import { buildCardHTML } from "../pwa/src/card-renderer";
+import { sanitizeFieldHtml } from "../pwa/src/dom";
 import { renderFields } from "../pwa/src/fields";
 import {
 	buildDueUrl,
-	buildFamiliarUrl,
-	buildQuizUrl,
 	enrichUnavailableMessage,
 	errorMessage,
 	formatInterval,
@@ -13,7 +12,7 @@ import {
 	stateClass,
 	stateLabel,
 } from "../pwa/src/helpers";
-import { isTtsAvailable, speak, stopSpeaking } from "../pwa/src/tts";
+import { speak, stopSpeaking } from "../pwa/src/tts";
 
 describe("buildDueUrl", () => {
 	it("returns only the limit query when deck is null", () => {
@@ -42,22 +41,6 @@ describe("buildDueUrl", () => {
 
 	it("omits offset when zero", () => {
 		expect(buildDueUrl(null, 50, 0)).toBe("?limit=50");
-	});
-});
-
-describe("buildQuizUrl", () => {
-	it("returns only the limit query when deck is null", () => {
-		expect(buildQuizUrl(null, 20)).toBe("?limit=20");
-	});
-
-	it("includes deck and limit when a deck is provided", () => {
-		expect(buildQuizUrl("Default", 20)).toBe("?deck=Default&limit=20");
-	});
-});
-
-describe("buildFamiliarUrl", () => {
-	it("returns an empty string (no params)", () => {
-		expect(buildFamiliarUrl()).toBe("");
 	});
 });
 
@@ -249,11 +232,6 @@ describe("registerShortcuts", () => {
 });
 
 describe("TTS module", () => {
-	it("isTtsAvailable returns false in Node environment", () => {
-		// In Node, speechSynthesis is undefined
-		expect(isTtsAvailable()).toBe(false);
-	});
-
 	it("speak does not throw when speechSynthesis is unavailable", () => {
 		expect(() => speak("hello")).not.toThrow();
 	});
@@ -319,6 +297,49 @@ describe("renderFields", () => {
 	it("renders HTML in field values (card content from Yomitan contains HTML)", () => {
 		const html = renderFields({ Front: "hello", Back: "line1<br>line2" }, "Front");
 		expect(html).toContain("<br>");
+	});
+});
+
+describe("sanitizeFieldHtml", () => {
+	it("keeps benign markup used by Yomitan fields", () => {
+		const html = `line1<br><i>italic</i> <span style="color:#888">tag</span>`;
+		expect(sanitizeFieldHtml(html)).toBe(html);
+	});
+
+	it("returns plain text unchanged", () => {
+		expect(sanitizeFieldHtml("just words & symbols < 3")).toBe("just words & symbols < 3");
+	});
+
+	it("removes script elements including their content", () => {
+		expect(sanitizeFieldHtml("a<script>alert(1)</script>b")).toBe("ab");
+	});
+
+	it("removes unclosed script tags", () => {
+		expect(sanitizeFieldHtml("a<script src=evil>b")).toBe("ab");
+	});
+
+	it("removes iframe/object/embed elements", () => {
+		expect(sanitizeFieldHtml('<iframe src="https://evil"></iframe>ok')).toBe("ok");
+		expect(sanitizeFieldHtml('<object data="x"></object>ok')).toBe("ok");
+		expect(sanitizeFieldHtml("<embed src=x>ok")).toBe("ok");
+	});
+
+	it("strips inline event handler attributes", () => {
+		const out = sanitizeFieldHtml('<img src="x.png" onerror="alert(1)">');
+		expect(out).toBe('<img src="x.png">');
+		expect(sanitizeFieldHtml("<div onclick='x()'>t</div>")).toBe("<div>t</div>");
+	});
+
+	it("strips javascript: URLs", () => {
+		expect(sanitizeFieldHtml('<a href="javascript:alert(1)">t</a>')).toBe("<a>t</a>");
+		expect(sanitizeFieldHtml("<a href=javascript:alert(1)>t</a>")).toBe("<a>t</a>");
+	});
+
+	it("strips data:text/html URLs but keeps other data URLs", () => {
+		expect(sanitizeFieldHtml('<a href="data:text/html;base64,x">t</a>')).toBe("<a>t</a>");
+		expect(sanitizeFieldHtml('<audio src="data:audio/mp3;base64,x"></audio>')).toContain(
+			"data:audio/mp3",
+		);
 	});
 });
 

@@ -1,4 +1,4 @@
-import { escapeHtml } from "./dom";
+import { escapeHtml, sanitizeFieldHtml } from "./dom";
 
 /**
  * Render card fields as structured HTML.
@@ -15,7 +15,7 @@ export function renderFields(fields: Record<string, string>, frontKey: string): 
 			([key, value]) => `
     <div class="field-block">
       <span class="field-label">${escapeHtml(key)}</span>
-      <div class="field-value">${value}</div>
+      <div class="field-value">${sanitizeFieldHtml(value)}</div>
     </div>
   `,
 		)

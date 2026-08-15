@@ -1,4 +1,5 @@
 import { type ActivityDay, fetchActivity, fetchStats } from "./api";
+import { escapeHtml } from "./dom";
 import { errorMessage } from "./helpers";
 
 interface GraphCell {
@@ -76,23 +77,6 @@ function buildGraph(days: ActivityDay[]): GraphWeek[] {
 		});
 	}
 	return weeks;
-}
-
-function escapeHtml(s: string): string {
-	return s.replace(/[&<>"']/g, (ch) => {
-		switch (ch) {
-			case "&":
-				return "&amp;";
-			case "<":
-				return "&lt;";
-			case ">":
-				return "&gt;";
-			case '"':
-				return "&quot;";
-			default:
-				return "&#39;";
-		}
-	});
 }
 
 function scrollActivityToLatest(root: HTMLElement): void {

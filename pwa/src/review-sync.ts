@@ -82,11 +82,8 @@ export async function syncReviewOps(): Promise<SyncResult> {
 
 export async function getSyncStatus(): Promise<SyncStatus> {
 	const pendingCount = await countPendingOps();
-	const allOps = await getAllOps();
-	const lastError = allOps.reduce<string | undefined>((latest, op) => {
-		if (op.syncStatus !== "failed" || !op.lastError) return latest;
-		if (!latest) return op.lastError;
-		return op.lastError; // last iterated wins; ops are createdAt-ascending from getAllOps
-	}, undefined);
+	const allOps = await getAllOps(); // createdAt-ascending
+	const failed = allOps.filter((op) => op.syncStatus === "failed" && op.lastError);
+	const lastError = failed.length > 0 ? failed[failed.length - 1].lastError : undefined;
 	return { pendingCount, lastError };
 }
