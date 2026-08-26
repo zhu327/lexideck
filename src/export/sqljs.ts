@@ -32,7 +32,10 @@ async function loadAndInitSqlJs(): Promise<SqlJsStatic> {
 		// Provide a pre-compiled WebAssembly.Module via ES module import.
 		// This bypasses WebAssembly.instantiate() which is blocked in
 		// Cloudflare Workers local dev (miniflare).
-		instantiateWasm(imports: any, receiveInstance: (instance: WebAssembly.Instance, module: WebAssembly.Module) => void) {
+		instantiateWasm(
+			imports: any,
+			receiveInstance: (instance: WebAssembly.Instance, module: WebAssembly.Module) => void,
+		) {
 			const instance = new WebAssembly.Instance(wasmModule, imports);
 			receiveInstance(instance, wasmModule);
 			return instance.exports;

@@ -2,6 +2,9 @@
 # Anki Vocab — Cloudflare Workers 配置 (示例)
 # 复制此文件为 wrangler.toml 并填入你自己的值
 # ⚠️ wrangler.toml 包含敏感信息，已在 .gitignore 中排除
+# ⚠️ LLM_API_KEY / ANKICONNECT_API_KEY 建议用 secret 而非 [vars]：
+#    npx wrangler secret put LLM_API_KEY
+#    npx wrangler secret put ANKICONNECT_API_KEY
 # ──────────────────────────────────────────────────────────
 
 name = "anki-app"
@@ -26,13 +29,16 @@ migrations_dir = "migrations"
 # 示例使用 Cloudflare Workers AI，也可替换为 OpenAI / DeepSeek / Ollama 等
 LLM_BASE_URL = "https://api.cloudflare.com/client/v4/accounts/<ACCOUNT_ID>/ai/v1"
 LLM_MODEL = "@cf/qwen/qwen3-30b-a3b-fp8"
-LLM_API_KEY = "your-llm-api-key"
 
-# API 鉴权密钥 — PWA 与 Yomitan 均使用此 key 访问后端
-# 自行生成一个随机字符串，例如: openssl rand -hex 24
-ANKICONNECT_API_KEY = "your-api-key-here"
+# API 鉴权密钥 — Yomitan 调用 /ankiconnect 端点时使用
+# 生成方式: openssl rand -hex 24（请改用 wrangler secret put 配置，勿明文写在 [vars]）
+# ANKICONNECT_API_KEY = "your-api-key-here"
 
 # ── 可选参数 (有默认值，按需覆盖) ──────────────────────────
 # NEW_CARDS_PER_DAY = "20"      # 每日新卡上限
 # REVIEWS_PER_DAY = "100"       # 每日复习上限
 # TIMEZONE = "+8"               # 时区偏移 (小时)，用于每日重置计算
+
+[observability.logs]
+enabled = true
+invocation_logs = true

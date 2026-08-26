@@ -515,29 +515,4 @@ describe("submitReview", () => {
 		expect(op.syncStatus).toBe("pending");
 		expect(op.createdAt).toBe(Date.now());
 	});
-
-	// ── Regression: authFetch adds Authorization ───────────────────
-
-	it("10. authFetch adds Authorization: Bearer <key> when key is set", async () => {
-		stubIndexedDbV2();
-		vi.stubGlobal("navigator", { onLine: true });
-
-		const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
-			async () =>
-				new Response(JSON.stringify({ due: 100 }), {
-					status: 200,
-					headers: { "content-type": "application/json" },
-				}),
-		);
-		vi.stubGlobal("fetch", fetchMock);
-
-		const { submitReview, setApiKey } = await import("../pwa/src/api");
-		setApiKey("test-key-123");
-		await submitReview("card-1", 3, "all");
-
-		expect(fetchMock).toHaveBeenCalledOnce();
-		const [, init] = fetchMock.mock.calls[0];
-		const headers = init?.headers as Headers;
-		expect(headers.get("Authorization")).toBe("Bearer test-key-123");
-	});
 });

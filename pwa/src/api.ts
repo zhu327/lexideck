@@ -1,32 +1,6 @@
 import { buildDueUrl, enrichUnavailableMessage, type Rating } from "./helpers";
 import { addReviewOp, removeCardFromReviewQueue } from "./offline-review";
 
-/* ── API Key Management ────────────────────────────────── */
-
-const API_KEY_STORAGE = "anki-api-key";
-
-export function getApiKey(): string | null {
-	return localStorage.getItem(API_KEY_STORAGE);
-}
-
-export function setApiKey(key: string): void {
-	localStorage.setItem(API_KEY_STORAGE, key);
-}
-
-export function clearApiKey(): void {
-	localStorage.removeItem(API_KEY_STORAGE);
-}
-
-/** Authenticated fetch — adds Bearer token from localStorage. */
-export async function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-	const key = getApiKey();
-	const headers = new Headers(init?.headers);
-	if (key) {
-		headers.set("Authorization", `Bearer ${key}`);
-	}
-	return fetch(input, { ...init, headers });
-}
-
 export interface ReviewCardView {
 	cardId: string;
 	noteId: string;
@@ -83,7 +57,7 @@ async function exportErrorMessage(res: Response): Promise<string> {
 }
 
 export async function downloadApkgExport(): Promise<ApkgDownload> {
-	const res = await authFetch("/api/export/apkg");
+	const res = await fetch("/api/export/apkg");
 	if (!res.ok) {
 		throw new Error(await exportErrorMessage(res));
 	}
@@ -100,7 +74,7 @@ export async function fetchDue(
 	limit = 50,
 	offset?: number,
 ): Promise<{ cards: ReviewCardView[]; total: number }> {
-	const res = await authFetch(`/api/review/due${buildDueUrl(deckName ?? null, limit, offset)}`);
+	const res = await fetch(`/api/review/due${buildDueUrl(deckName ?? null, limit, offset)}`);
 	const body = await expectJson<{ cards: ReviewCardView[]; total?: number }>(res);
 	return { cards: body.cards, total: body.total ?? body.cards.length };
 }
@@ -160,7 +134,7 @@ export async function submitReview(
 ): Promise<SubmitResult> {
 	let res: Response;
 	try {
-		res = await authFetch("/api/review/submit", {
+		res = await fetch("/api/review/submit", {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ cardId, rating }),
@@ -213,7 +187,7 @@ export async function submitReview(
 }
 
 export async function markFamiliar(noteId: string): Promise<void> {
-	const res = await authFetch("/api/review/familiar", {
+	const res = await fetch("/api/review/familiar", {
 		method: "POST",
 		headers: { "content-type": "application/json" },
 		body: JSON.stringify({ noteId }),
@@ -222,7 +196,7 @@ export async function markFamiliar(noteId: string): Promise<void> {
 }
 
 export async function unmarkFamiliar(noteId: string): Promise<void> {
-	const res = await authFetch("/api/review/familiar/unmark", {
+	const res = await fetch("/api/review/familiar/unmark", {
 		method: "POST",
 		headers: { "content-type": "application/json" },
 		body: JSON.stringify({ noteId }),
@@ -231,7 +205,7 @@ export async function unmarkFamiliar(noteId: string): Promise<void> {
 }
 
 export async function fetchDeckNames(): Promise<string[]> {
-	const res = await authFetch("/api/decks");
+	const res = await fetch("/api/decks");
 	const body = await expectJson<{ decks: string[] }>(res);
 	return body.decks;
 }
@@ -253,12 +227,12 @@ export async function searchNotes(
 	if (query) params.set("q", query);
 	if (limit !== undefined) params.set("limit", String(limit));
 	if (offset !== undefined) params.set("offset", String(offset));
-	const res = await authFetch(`/api/notes/search?${params.toString()}`);
+	const res = await fetch(`/api/notes/search?${params.toString()}`);
 	return expectJson<{ notes: NoteSearchResult[]; total: number }>(res);
 }
 
 export async function deleteNote(noteId: string): Promise<void> {
-	const res = await authFetch(`/api/notes/${encodeURIComponent(noteId)}`, {
+	const res = await fetch(`/api/notes/${encodeURIComponent(noteId)}`, {
 		method: "DELETE",
 	});
 	if (!res.ok) {
@@ -267,7 +241,7 @@ export async function deleteNote(noteId: string): Promise<void> {
 }
 
 export async function enrichNote(noteId: string): Promise<Enrichment | { error: string }> {
-	const res = await authFetch(`/api/notes/${encodeURIComponent(noteId)}/enrich`, {
+	const res = await fetch(`/api/notes/${encodeURIComponent(noteId)}/enrich`, {
 		method: "POST",
 	});
 	if (!res.ok) {
@@ -281,7 +255,7 @@ export async function updateNote(
 	fields: Record<string, string>,
 	tags?: string[],
 ): Promise<void> {
-	const res = await authFetch(`/api/notes/${encodeURIComponent(noteId)}`, {
+	const res = await fetch(`/api/notes/${encodeURIComponent(noteId)}`, {
 		method: "PUT",
 		headers: { "content-type": "application/json" },
 		body: JSON.stringify({ fields, tags }),
@@ -290,7 +264,7 @@ export async function updateNote(
 }
 
 export async function fetchEnrichment(noteId: string): Promise<Enrichment | null> {
-	const res = await authFetch(`/api/notes/${encodeURIComponent(noteId)}/enrich`);
+	const res = await fetch(`/api/notes/${encodeURIComponent(noteId)}/enrich`);
 	if (res.status === 404) return null;
 	if (!res.ok) return null;
 	return (await res.json()) as Enrichment;
@@ -317,11 +291,11 @@ export interface DailyActivity {
 }
 
 export async function fetchStats(): Promise<StatsSummary> {
-	const res = await authFetch("/api/stats/summary");
+	const res = await fetch("/api/stats/summary");
 	return expectJson<StatsSummary>(res);
 }
 
 export async function fetchActivity(days = 365): Promise<DailyActivity> {
-	const res = await authFetch(`/api/stats/activity?days=${days}`);
+	const res = await fetch(`/api/stats/activity?days=${days}`);
 	return expectJson<DailyActivity>(res);
 }

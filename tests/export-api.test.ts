@@ -2,15 +2,13 @@ import { env } from "cloudflare:workers";
 import { unzipSync } from "fflate";
 import { Hono } from "hono";
 import { beforeEach, describe, expect, it } from "vitest";
-import { type AuthUser, apiKeyAuth } from "../src/auth/apiKey";
 import { createDbClient } from "../src/db/client";
 import type { Env } from "../src/env";
 import { createExportApp } from "../src/export/router";
 import { loadSqlJs } from "../src/export/sqljs";
 
 function makeApp(testEnv: Env = env) {
-	const app = new Hono<{ Bindings: Env; Variables: { user: AuthUser } }>();
-	app.use("/api/*", apiKeyAuth());
+	const app = new Hono<{ Bindings: Env }>();
 	app.route("/api/export", createExportApp({ db: createDbClient(testEnv.DB) }));
 	return app;
 }
@@ -60,16 +58,6 @@ beforeEach(async () => {
 });
 
 describe("APKG export API", () => {
-	it("rejects requests without a bearer API key using the existing auth status", async () => {
-		const testEnv = { ...env, DEV: "0", ANKICONNECT_API_KEY: "test-key" };
-		const app = makeApp(testEnv);
-
-		const res = await app.fetch(new Request("http://localhost/api/export/apkg"), testEnv);
-
-		expect(res.status).toBe(401);
-		expect(await res.json()).toEqual({ error: "unauthorized" });
-	});
-
 	it("returns an APKG file download for an authorized user with notes", async () => {
 		await insertNote({
 			id: "export-api-note",
@@ -104,11 +92,7 @@ describe("APKG export API", () => {
 	});
 
 	it("maps oversized exports to a 413 JSON response", async () => {
-		const app = new Hono<{ Bindings: Env; Variables: { user: AuthUser } }>();
-		app.use("/api/*", async (c, next) => {
-			c.set("user", { userId: "local", email: "test@local", sub: "test" });
-			await next();
-		});
+		const app = new Hono<{ Bindings: Env }>();
 		app.route(
 			"/api/export",
 			createExportApp({

@@ -7,4 +7,7 @@ wrangler.toml
 .DS_Store
 *.log
 .pi
+!.pi/extensions/
+!.pi/extensions/**
+.pi/lexideck-word.local.json
 docs/

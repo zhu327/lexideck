@@ -1,14 +1,14 @@
 import type { Context } from "hono";
-import type { AuthUser } from "../../auth/apiKey";
 import type { DbClient } from "../../db/client";
 import { listFamiliarNotes } from "../../db/repos/cards-review";
 import { toggleNoteTag } from "../../db/repos/notes";
+import type { Env } from "../../env";
 
-type ReviewEnv = { Variables: { user: AuthUser } };
+type ReviewEnv = { Bindings: Env };
 
 function createToggleFamiliarHandler(deps: { db: DbClient }, add: boolean) {
 	return async (c: Context<ReviewEnv>) => {
-		const userId = c.get("user")?.userId ?? "local";
+		const userId = "local";
 		const body = await c.req.json<{ noteId?: string }>();
 		if (!body.noteId) {
 			return c.json({ error: "noteId required" }, 400);
@@ -27,7 +27,7 @@ export function createFamiliarHandler(deps: { db: DbClient }) {
 
 export function createFamiliarListHandler(deps: { db: DbClient }) {
 	return async (c: Context<ReviewEnv>) => {
-		const userId = c.get("user")?.userId ?? "local";
+		const userId = "local";
 		const cards = await listFamiliarNotes(deps.db, userId);
 		return c.json({ cards });
 	};

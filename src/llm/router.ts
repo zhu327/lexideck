@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import type { AuthUser } from "../auth/apiKey";
 import type { DbClient } from "../db/client";
 import { getEnrichment, saveEnrichment } from "../db/repos/enrichments";
 import { getNoteById } from "../db/repos/notes";
@@ -15,13 +14,11 @@ export interface LlmDeps {
 	enrich?: (note: NoteInput, config: LlmConfig) => Promise<Enrichment>;
 }
 
-export function createLlmApp(
-	deps: LlmDeps,
-): Hono<{ Bindings: Env; Variables: { user: AuthUser } }> {
-	const app = new Hono<{ Bindings: Env; Variables: { user: AuthUser } }>();
+export function createLlmApp(deps: LlmDeps): Hono<{ Bindings: Env }> {
+	const app = new Hono<{ Bindings: Env }>();
 
 	app.get("/notes/:id/enrich", async (c) => {
-		const userId = c.get("user")?.userId ?? "local";
+		const userId = "local";
 		const noteId = c.req.param("id");
 
 		const note = await getNoteById(deps.db, userId, noteId);
@@ -38,7 +35,7 @@ export function createLlmApp(
 	});
 
 	app.post("/notes/:id/enrich", async (c) => {
-		const userId = c.get("user")?.userId ?? "local";
+		const userId = "local";
 		const noteId = c.req.param("id");
 
 		const note = await getNoteById(deps.db, userId, noteId);

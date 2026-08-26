@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import { createAnkiconnectApp } from "./ankiconnect/router";
-import { type AuthUser, apiKeyAuth } from "./auth/apiKey";
 import { corsMiddleware } from "./cors";
 import { createDbClient } from "./db/client";
 import type { Env } from "./env";
@@ -10,7 +9,7 @@ import { createNotesApp } from "./notes/router";
 import { createReviewApp } from "./review/router";
 import { createStatsApp } from "./stats/router";
 
-type AppEnv = { Bindings: Env; Variables: { user: AuthUser } };
+type AppEnv = { Bindings: Env };
 
 // Build the Hono app with all sub-apps mounted. `env.DB` is a stable D1 binding
 // for the lifetime of the isolate, so creating the db clients once per isolate
@@ -20,7 +19,6 @@ function buildApp(env: Env): Hono<AppEnv> {
 	const app = new Hono<AppEnv>();
 
 	app.use("*", corsMiddleware());
-	app.use("/api/*", apiKeyAuth());
 
 	app.get("/api/health", async (c) => {
 		const db = createDbClient(c.env.DB);

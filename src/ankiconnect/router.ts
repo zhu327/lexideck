@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import type { AuthUser } from "../auth/apiKey";
 import type { DbClient } from "../db/client";
 import type { Env } from "../env";
 import { addNoteAction } from "./actions/addNote";
@@ -34,6 +33,20 @@ export interface ActionResult {
 
 type ActionHandler = (ctx: ActionCtx) => Promise<ActionResult>;
 
+/** Constant-time key comparison using the Workers-specific
+ * crypto.subtle.timingSafeEqual (not in the standard TS lib). */
+function isValidApiKey(candidate: unknown, expected: string): boolean {
+	if (typeof candidate !== "string" || candidate.length !== expected.length) {
+		return false;
+	}
+	const subtle = crypto.subtle as SubtleCrypto & {
+		timingSafeEqual(a: ArrayBuffer | ArrayBufferView, b: ArrayBuffer | ArrayBufferView): boolean;
+	};
+	const a = new TextEncoder().encode(candidate);
+	const b = new TextEncoder().encode(expected);
+	return subtle.timingSafeEqual(a, b);
+}
+
 const ACTIONS: Record<string, ActionHandler> = {
 	version: versionAction,
 	deckNames: deckNamesAction,
@@ -51,10 +64,8 @@ const ACTIONS: Record<string, ActionHandler> = {
 	apiReflect: apiReflectAction,
 };
 
-export function createAnkiconnectApp(
-	deps: AnkiDeps,
-): Hono<{ Bindings: Env; Variables: { user: AuthUser } }> {
-	const app = new Hono<{ Bindings: Env; Variables: { user: AuthUser } }>();
+export function createAnkiconnectApp(deps: AnkiDeps): Hono<{ Bindings: Env }> {
+	const app = new Hono<{ Bindings: Env }>();
 	app.post("/", async (c) => {
 		let version = 6; // default for error path
 		try {
@@ -63,7 +74,7 @@ export function createAnkiconnectApp(
 			// apiKey auth (Yomitan sends key in body)
 			if (c.env.DEV !== "1") {
 				const apiKey = c.env.ANKICONNECT_API_KEY;
-				if (!apiKey || body?.key !== apiKey) {
+				if (!apiKey || !isValidApiKey(body?.key, apiKey)) {
 					return c.json({ error: "unauthorized" }, 401);
 				}
 			}
@@ -75,7 +86,7 @@ export function createAnkiconnectApp(
 				const r: ActionResult = { result: null, error: `unsupported action: ${action}` };
 				return version <= 4 ? c.json(r.error ? null : r.result) : c.json(r);
 			}
-			const userId = c.get("user")?.userId ?? "local";
+			const userId = "local";
 			const r = await handler({ db: deps.db, userId, params: body.params ?? {} });
 			return version <= 4 ? c.json(r.error ? null : r.result) : c.json(r);
 		} catch (e) {

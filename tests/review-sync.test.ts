@@ -2,10 +2,6 @@ import type { Mock } from "vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { QueuedReviewOp } from "../pwa/src/offline-review";
 
-vi.mock("../pwa/src/api", () => ({
-	authFetch: vi.fn(),
-}));
-
 vi.mock("../pwa/src/offline-review", () => ({
 	getPendingOps: vi.fn(),
 	getAllOps: vi.fn(),
@@ -16,7 +12,6 @@ vi.mock("../pwa/src/offline-review", () => ({
 	countPendingOps: vi.fn(),
 }));
 
-import { authFetch } from "../pwa/src/api";
 import {
 	countPendingOps,
 	deleteOp,
@@ -28,7 +23,8 @@ import {
 } from "../pwa/src/offline-review";
 import { getSyncStatus, syncReviewOps } from "../pwa/src/review-sync";
 
-const mockAuthFetch = authFetch as Mock<typeof authFetch>;
+const mockFetch = vi.fn();
+vi.stubGlobal("fetch", mockFetch);
 const mockGetPendingOps = getPendingOps as Mock<typeof getPendingOps>;
 const mockGetAllOps = getAllOps as Mock<typeof getAllOps>;
 const mockSetOpSyncing = setOpSyncing as Mock<typeof setOpSyncing>;
@@ -69,7 +65,7 @@ describe("syncReviewOps", () => {
 			makeOp({ clientOperationId: "op-3", createdAt: 3000 }),
 		];
 		mockGetPendingOps.mockResolvedValue(ops);
-		mockAuthFetch.mockResolvedValue(okResponse());
+		mockFetch.mockResolvedValue(okResponse());
 		mockDeleteOp.mockResolvedValue(undefined);
 		mockSetOpSyncing.mockResolvedValue(undefined);
 		mockCountPendingOps.mockResolvedValue(0);
@@ -89,7 +85,7 @@ describe("syncReviewOps", () => {
 			makeOp({ clientOperationId: "op-b", cardId: "card-b", createdAt: 2000 }),
 		];
 		mockGetPendingOps.mockResolvedValue(ops);
-		mockAuthFetch.mockResolvedValue(okResponse());
+		mockFetch.mockResolvedValue(okResponse());
 		mockDeleteOp.mockResolvedValue(undefined);
 		mockSetOpSyncing.mockResolvedValue(undefined);
 		mockCountPendingOps.mockResolvedValue(0);
@@ -102,8 +98,8 @@ describe("syncReviewOps", () => {
 		// deleteOp called in order
 		expect(mockDeleteOp).toHaveBeenNthCalledWith(1, "op-a");
 		expect(mockDeleteOp).toHaveBeenNthCalledWith(2, "op-b");
-		// authFetch called with correct body
-		expect(mockAuthFetch).toHaveBeenNthCalledWith(
+		// fetch called with correct body
+		expect(mockFetch).toHaveBeenNthCalledWith(
 			1,
 			"/api/review/submit",
 			expect.objectContaining({
@@ -123,7 +119,7 @@ describe("syncReviewOps", () => {
 		mockSetOpSyncing.mockResolvedValue(undefined);
 		mockDeleteOp.mockResolvedValue(undefined);
 		mockCountPendingOps.mockResolvedValue(2);
-		mockAuthFetch
+		mockFetch
 			.mockResolvedValueOnce(okResponse())
 			.mockRejectedValueOnce(new TypeError("network error"));
 
@@ -139,7 +135,7 @@ describe("syncReviewOps", () => {
 		const ops = [makeOp({ clientOperationId: "op-1" })];
 		mockGetPendingOps.mockResolvedValue(ops);
 		mockSetOpSyncing.mockResolvedValue(undefined);
-		mockAuthFetch.mockResolvedValue(errorResponse(401));
+		mockFetch.mockResolvedValue(errorResponse(401));
 		mockCountPendingOps.mockResolvedValue(1);
 
 		const result = await syncReviewOps();
@@ -159,7 +155,7 @@ describe("syncReviewOps", () => {
 		mockMarkOpFailed.mockResolvedValue(undefined);
 		mockDeleteOp.mockResolvedValue(undefined);
 		mockCountPendingOps.mockResolvedValue(0);
-		mockAuthFetch.mockResolvedValueOnce(errorResponse(400)).mockResolvedValueOnce(okResponse());
+		mockFetch.mockResolvedValueOnce(errorResponse(400)).mockResolvedValueOnce(okResponse());
 
 		const result = await syncReviewOps();
 
@@ -174,7 +170,7 @@ describe("syncReviewOps", () => {
 		mockGetPendingOps.mockResolvedValue(ops);
 		mockSetOpSyncing.mockResolvedValue(undefined);
 		mockMarkOpFailed.mockResolvedValue(undefined);
-		mockAuthFetch.mockResolvedValue(errorResponse(404));
+		mockFetch.mockResolvedValue(errorResponse(404));
 		mockCountPendingOps.mockResolvedValue(0);
 
 		const result = await syncReviewOps();
@@ -188,7 +184,7 @@ describe("syncReviewOps", () => {
 		mockGetPendingOps.mockResolvedValue(ops);
 		mockSetOpSyncing.mockResolvedValue(undefined);
 		mockMarkOpFailed.mockResolvedValue(undefined);
-		mockAuthFetch.mockResolvedValue(errorResponse(409));
+		mockFetch.mockResolvedValue(errorResponse(409));
 		mockCountPendingOps.mockResolvedValue(0);
 
 		const result = await syncReviewOps();
@@ -202,7 +198,7 @@ describe("syncReviewOps", () => {
 		mockGetPendingOps.mockResolvedValue(ops);
 		mockSetOpSyncing.mockResolvedValue(undefined);
 		mockResetOpToPending.mockResolvedValue(undefined);
-		mockAuthFetch.mockResolvedValue(errorResponse(503));
+		mockFetch.mockResolvedValue(errorResponse(503));
 		mockCountPendingOps.mockResolvedValue(1);
 
 		const result = await syncReviewOps();
@@ -217,7 +213,7 @@ describe("syncReviewOps", () => {
 		const ops = [makeOp({ clientOperationId: "op-1" })];
 		mockGetPendingOps.mockResolvedValue(ops);
 		mockSetOpSyncing.mockResolvedValue(undefined);
-		mockAuthFetch.mockResolvedValue(okResponse());
+		mockFetch.mockResolvedValue(okResponse());
 		mockDeleteOp.mockResolvedValue(undefined);
 		mockCountPendingOps.mockResolvedValue(0);
 

@@ -1,7 +1,6 @@
 import { env } from "cloudflare:workers";
 import { Hono } from "hono";
 import { beforeEach, describe, expect, it } from "vitest";
-import { type AuthUser, apiKeyAuth } from "../src/auth/apiKey";
 import { createDbClient } from "../src/db/client";
 import type { Env } from "../src/env";
 import { createReviewApp } from "../src/review/router";
@@ -11,8 +10,7 @@ const MODEL = "model-basic-local";
 
 // Mount the review app behind the auth middleware exactly like a real caller.
 function makeApp() {
-	const a = new Hono<{ Bindings: Env; Variables: { user: AuthUser } }>();
-	a.use("*", apiKeyAuth());
+	const a = new Hono<{ Bindings: Env }>();
 	a.route("/api/review", createReviewApp({ db: createDbClient(env.DB) }));
 	return a;
 }

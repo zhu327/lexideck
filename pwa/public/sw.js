@@ -217,9 +217,9 @@ self.addEventListener("periodicsync", (event) => {
 });
 
 /**
- * Ask open pages to refresh the badge themselves. The SW cannot fetch
- * /api/review/due directly because it has no access to the Authorization
- * token (kept in localStorage on the page).
+ * Ask open pages to refresh the badge themselves. Auth is now handled by
+ * Cloudflare Access cookies, which the SW could send itself, but delegating
+ * to the page keeps the fetch logic (and caching) in one place.
  */
 async function requestBadgeRefresh() {
 	const allClients = await clients.matchAll({ type: "window" });

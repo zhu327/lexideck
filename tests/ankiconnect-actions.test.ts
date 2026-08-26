@@ -2,13 +2,11 @@ import { env } from "cloudflare:workers";
 import { Hono } from "hono";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createAnkiconnectApp } from "../src/ankiconnect/router";
-import { type AuthUser, apiKeyAuth } from "../src/auth/apiKey";
 import { createDbClient } from "../src/db/client";
 import type { Env } from "../src/env";
 
 function app() {
-	const a = new Hono<{ Bindings: Env; Variables: { user: AuthUser } }>();
-	a.use("*", apiKeyAuth());
+	const a = new Hono<{ Bindings: Env }>();
 	a.route("/", createAnkiconnectApp({ db: createDbClient(env.DB) }));
 	return a;
 }

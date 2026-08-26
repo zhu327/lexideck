@@ -1,10 +1,11 @@
 import type { MiddlewareHandler } from "hono";
 import type { Env } from "./env";
 
-// Permissive CORS for Yomitan cross-origin browser calls. The API is auth-
-// protected, so a wildcard origin is safe. OPTIONS preflights are answered
-// directly (before auth) with 204 + CORS headers; all other responses get the
-// headers appended after downstream handlers run.
+// Permissive CORS for Yomitan cross-origin browser calls. PWA and /api/* are
+// protected by Cloudflare Access (cookie-based), and /ankiconnect is protected
+// by the body `key` field, so a wildcard origin is safe. OPTIONS preflights
+// are answered directly (before auth) with 204 + CORS headers; all other
+// responses get the headers appended after downstream handlers run.
 const CORS_HEADERS: Record<string, string> = {
 	"Access-Control-Allow-Origin": "*",
 	"Access-Control-Allow-Methods": "GET,POST,OPTIONS",

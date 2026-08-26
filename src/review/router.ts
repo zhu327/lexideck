@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import type { AuthUser } from "../auth/apiKey";
 import type { DbClient } from "../db/client";
 import type { Env } from "../env";
 import { createDueHandler } from "./routes/due";
@@ -15,10 +14,8 @@ export interface ReviewDeps {
 	db: DbClient;
 }
 
-export function createReviewApp(
-	deps: ReviewDeps,
-): Hono<{ Bindings: Env; Variables: { user: AuthUser } }> {
-	const app = new Hono<{ Bindings: Env; Variables: { user: AuthUser } }>();
+export function createReviewApp(deps: ReviewDeps): Hono<{ Bindings: Env }> {
+	const app = new Hono<{ Bindings: Env }>();
 	app.get("/due", createDueHandler(deps));
 	app.post("/submit", createSubmitHandler(deps));
 	app.get("/quiz", createQuizHandler(deps));

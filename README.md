@@ -17,7 +17,7 @@ LexiDeck 是一个基于 **Cloudflare Workers + D1 + PWA** 的轻量级间隔重
 | **AnkiConnect 兼容 API** | 实现 `addNote`、`findNotes`、`notesInfo`、`deckNames`、`modelNames` 等常用 action，供 Yomitan 直接调用 |
 | **LLM 词汇增强** | 调用 LLM（兼容 OpenAI chat/completions 接口）为单词生成：常见错误、高频搭配、词源记忆、文化注释 |
 | **每日限额** | 可配置每日新卡上限与复习上限，支持时区感知的每日重置 |
-| **API Key 鉴权** | 所有 API 通过 Bearer Token 保护；AnkiConnect 端点额外支持 body 内 `key` 字段（Yomitan 专用） |
+| **Cloudflare Access 认证** | 全站由 Cloudflare Access 保护（`/ankiconnect` 豁免）；AnkiConnect 端点通过 body 内 `key` 字段自行鉴权（Yomitan 专用） |
 
 ### 前端 (PWA)
 
@@ -79,7 +79,7 @@ cp wrangler.toml wrangler.toml.bak   # 备份已有配置（可选）
 | `LLM_BASE_URL` | ✅ | LLM API 地址。使用 Cloudflare Workers AI 时格式为 `https://api.cloudflare.com/client/v4/accounts/<ACCOUNT_ID>/ai/v1` |
 | `LLM_MODEL` | ✅ | 模型名称，如 `@cf/qwen/qwen3-30b-a3b-fp8`、`gpt-4o-mini` 等 |
 | `LLM_API_KEY` | ✅ | LLM API 密钥 |
-| `ANKICONNECT_API_KEY` | ✅ | 自定义 API 密钥，PWA 和 Yomitan 都用它鉴权。生成方式：`openssl rand -hex 24` |
+| `ANKICONNECT_API_KEY` | ✅ | AnkiConnect 端点（`/ankiconnect`）的鉴权密钥，供 Yomitan 使用。生成方式：`openssl rand -hex 24` |
 | `NEW_CARDS_PER_DAY` | ❌ | 每日新卡上限，默认 `20` |
 | `REVIEWS_PER_DAY` | ❌ | 每日复习上限，默认 `100` |
 | `TIMEZONE` | ❌ | 时区偏移（小时），如 `+8` 表示 UTC+8，默认 `0` |
@@ -123,9 +123,16 @@ npx wrangler deploy
 
 ### 6. 首次使用 PWA
 
-1. 在浏览器打开部署地址
-2. 输入你在 `wrangler.toml` 中设置的 `ANKICONNECT_API_KEY`
-3. 验证通过后进入主界面；通过 Yomitan 在阅读时制卡，然后在 PWA 中复习和管理词库
+1. 在浏览器打开部署地址，通过 Cloudflare Access 登录（如 Google 账号）后进入主界面
+2. 通过 Yomitan 在阅读时制卡，然后在 PWA 中复习和管理词库
+
+### 7. 配置 Cloudflare Access（可选）
+
+全站（PWA 静态资源 + `/api/*`）可接入 Cloudflare Access 做身份认证：
+
+- 在 Cloudflare Zero Trust → **Access → Applications** 创建一个应用，策略允许你的用户（如公司邮箱域）登录；
+- 应用覆盖整个站点路径，**豁免 `/ankiconnect`**（含所有 method，含 `OPTIONS` 预检），因为 Yomitan 无法完成 SSO 登录，该端点依靠 `ANKICONNECT_API_KEY` 自证；
+- 若使用外部健康检查（UptimeRobot 等）探测 `/api/health`，需一并豁免该路径。
 
 ---
 
@@ -227,7 +234,6 @@ Basic Model 有两个字段：`Front` 和 `Back`。按如下方式配置映射�
 ├── src/                    # Workers 后端
 │   ├── index.ts            # 入口，组装 Hono 子路由
 │   ├── env.ts              # 环境变量类型
-│   ├── auth/               # API Key 鉴权
 │   ├── ankiconnect/        # AnkiConnect 兼容 API
 │   ├── notes/              # 笔记 CRUD
 │   ├── review/             # SRS 复习 (due/submit/quiz/familiar)

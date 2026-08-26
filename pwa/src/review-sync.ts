@@ -1,4 +1,3 @@
-import { authFetch } from "./api";
 import {
 	countPendingOps,
 	deleteOp,
@@ -39,7 +38,7 @@ export async function syncReviewOps(): Promise<SyncResult> {
 		for (const op of ops) {
 			await setOpSyncing(op.clientOperationId);
 			try {
-				const res = await authFetch("/api/review/submit", {
+				const res = await fetch("/api/review/submit", {
 					method: "POST",
 					headers: { "content-type": "application/json" },
 					body: JSON.stringify({ cardId: op.cardId, rating: op.rating }),

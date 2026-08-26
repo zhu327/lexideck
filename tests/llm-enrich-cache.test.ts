@@ -1,7 +1,6 @@
 import { env } from "cloudflare:workers";
 import { Hono } from "hono";
 import { beforeEach, describe, expect, it } from "vitest";
-import { type AuthUser, apiKeyAuth } from "../src/auth/apiKey";
 import { createDbClient } from "../src/db/client";
 import type { Env } from "../src/env";
 import { createLlmApp, type LlmDeps } from "../src/llm/router";
@@ -22,8 +21,7 @@ const FIXED_ENRICHMENT: Enrichment = {
 };
 
 function app(enrich?: LlmDeps["enrich"]) {
-	const a = new Hono<{ Bindings: Env; Variables: { user: AuthUser } }>();
-	a.use("*", apiKeyAuth());
+	const a = new Hono<{ Bindings: Env }>();
 	a.route("/api", createLlmApp({ db: createDbClient(env.DB), enrich }));
 	return a;
 }

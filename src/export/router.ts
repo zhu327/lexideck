@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import type { AuthUser } from "../auth/apiKey";
 import type { DbClient } from "../db/client";
 import { getExportSnapshot } from "../db/repos/export";
 import type { Env } from "../env";
@@ -9,13 +8,11 @@ export interface ExportDeps {
 	db: DbClient;
 }
 
-export function createExportApp(
-	deps: ExportDeps,
-): Hono<{ Bindings: Env; Variables: { user: AuthUser } }> {
-	const app = new Hono<{ Bindings: Env; Variables: { user: AuthUser } }>();
+export function createExportApp(deps: ExportDeps): Hono<{ Bindings: Env }> {
+	const app = new Hono<{ Bindings: Env }>();
 
 	app.get("/apkg", async (c) => {
-		const userId = c.get("user")?.userId ?? "local";
+		const userId = "local";
 		try {
 			const snapshot = await getExportSnapshot(deps.db, userId);
 			const result = await generateApkg(snapshot);

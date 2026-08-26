@@ -1,58 +1,10 @@
 import "./styles.css";
-import { clearApiKey, fetchDeckNames, getApiKey, setApiKey } from "./api";
+import { fetchDeckNames } from "./api";
 import { invalidateDueTotalCache, setBadge, updateBadge } from "./badge";
 import { cleanupReview, renderReview } from "./review";
 import { syncReviewOps } from "./review-sync";
 import { renderSearch } from "./search";
 import { renderStats } from "./stats";
-
-/* ── Setup Screen ─────────────────────────────────────── */
-
-function renderSetup(app: HTMLElement): void {
-	app.innerHTML = `
-		<div class="setup-screen">
-			<h1>Anki Vocab</h1>
-			<p>Enter your API key to connect to your Anki backend.</p>
-			<form id="setup-form" class="setup-card">
-				<label for="api-key-input">API Key</label>
-				<input id="api-key-input" type="password" autocomplete="off" placeholder="Paste your API key" />
-				<button type="submit" id="setup-submit">Connect</button>
-				<p id="setup-error" class="setup-error" hidden></p>
-			</form>
-		</div>
-	`;
-
-	const form = document.getElementById("setup-form") as HTMLFormElement;
-	const input = document.getElementById("api-key-input") as HTMLInputElement;
-	const error = document.getElementById("setup-error") as HTMLParagraphElement;
-	const submit = document.getElementById("setup-submit") as HTMLButtonElement;
-
-	form.addEventListener("submit", async (e) => {
-		e.preventDefault();
-		const key = input.value.trim();
-		if (!key) return;
-
-		submit.disabled = true;
-		submit.textContent = "Connecting…";
-		error.hidden = true;
-
-		try {
-			const res = await fetch("/api/health", {
-				headers: { Authorization: `Bearer ${key}` },
-			});
-			if (!res.ok) throw new Error("Invalid API key");
-			setApiKey(key);
-			bootApp(app);
-		} catch {
-			error.textContent = "Invalid API key. Please try again.";
-			error.hidden = false;
-			submit.disabled = false;
-			submit.textContent = "Connect";
-		}
-	});
-
-	input.focus();
-}
 
 /* ── Boot ─────────────────────────────────────────────── */
 
@@ -67,7 +19,6 @@ function bootApp(app: HTMLElement): void {
 			<select id="deck-selector">
 				<option value="">All Decks</option>
 			</select>
-			<button id="logout-btn" class="secondary" type="button" title="Disconnect this device">Log out</button>
 		</div>
 	</header>
 	<div id="offline-indicator" class="offline-indicator">You're offline — changes will sync when reconnected</div>
@@ -157,16 +108,6 @@ function bootApp(app: HTMLElement): void {
 		});
 	}
 
-	/* ── Logout ───────────────────────────────────────────── */
-
-	const logoutBtn = document.getElementById("logout-btn");
-	if (logoutBtn instanceof HTMLButtonElement) {
-		logoutBtn.addEventListener("click", () => {
-			clearApiKey();
-			location.reload();
-		});
-	}
-
 	/* ── Routing ──────────────────────────────────────────── */
 
 	const route = (): void => {
@@ -209,12 +150,8 @@ function bootApp(app: HTMLElement): void {
 	route();
 } // end bootApp
 
-// Show setup screen if no API key is stored, otherwise boot the app.
-if (!getApiKey()) {
-	renderSetup(app);
-} else {
-	bootApp(app);
-}
+// Cloudflare Access 负责身份认证，PWA 无需再登录/登出，直接启动应用。
+bootApp(app);
 
 /* ── Service Worker Registration ──────────────────────── */
 
@@ -249,7 +186,7 @@ if ("serviceWorker" in navigator) {
 						syncReviewOps().catch(() => {});
 					}
 					if (event.data?.type === "trigger-badge-refresh") {
-						// The SW cannot attach the auth header itself; refresh from the page.
+						// SW 无法直接刷新徽标，从页面刷新。
 						updateBadge(localStorage.getItem("selectedDeck") || null).catch(() => {});
 					}
 					if (event.data?.type === "due-count" && typeof event.data.count === "number") {

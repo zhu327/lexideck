@@ -1,12 +1,11 @@
 import type { Context } from "hono";
-import type { AuthUser } from "../../auth/apiKey";
 import type { DbClient } from "../../db/client";
 import { countDueCards, listDueCards } from "../../db/repos/cards-review";
 import { countTodayReviewsByType } from "../../db/repos/revlog";
-import { parseTzOffset, todayStartMs } from "../../utils/timezone";
 import type { Env } from "../../env";
+import { parseTzOffset, todayStartMs } from "../../utils/timezone";
 
-type ReviewEnv = { Bindings: Env; Variables: { user: AuthUser } };
+type ReviewEnv = { Bindings: Env };
 
 export function parseLimit(raw: string | undefined, def: number): number {
 	const n = Number(raw ?? def);
@@ -20,7 +19,7 @@ export function parseOffset(raw: string | undefined): number {
 
 export function createDueHandler(deps: { db: DbClient }) {
 	return async (c: Context<ReviewEnv>) => {
-		const userId = c.get("user")?.userId ?? "local";
+		const userId = "local";
 		const deckName = c.req.query("deck") || undefined;
 		const limit = parseLimit(c.req.query("limit"), 50);
 		const offset = parseOffset(c.req.query("offset"));

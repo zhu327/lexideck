@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import { coerceFields, resolveNote } from "../ankiconnect/actions/addNote";
-import type { AuthUser } from "../auth/apiKey";
 import type { DbClient } from "../db/client";
 import { createCardsForNote } from "../db/repos/cards-create";
 import { listDeckNames } from "../db/repos/decks";
@@ -19,14 +18,12 @@ export interface NotesDeps {
 	db: DbClient;
 }
 
-export function createNotesApp(
-	deps: NotesDeps,
-): Hono<{ Bindings: Env; Variables: { user: AuthUser } }> {
-	const app = new Hono<{ Bindings: Env; Variables: { user: AuthUser } }>();
+export function createNotesApp(deps: NotesDeps): Hono<{ Bindings: Env }> {
+	const app = new Hono<{ Bindings: Env }>();
 
 	// POST /notes — create a note + cards
 	app.post("/notes", async (c) => {
-		const userId = c.get("user")?.userId ?? "local";
+		const userId = "local";
 		let body: Record<string, unknown>;
 		try {
 			body = await c.req.json();
@@ -73,7 +70,7 @@ export function createNotesApp(
 
 	// GET /notes/search — search notes
 	app.get("/notes/search", async (c) => {
-		const userId = c.get("user")?.userId ?? "local";
+		const userId = "local";
 		const query = c.req.query("q") || undefined;
 		const limit = Number(c.req.query("limit")) || undefined;
 		const offset = Number(c.req.query("offset")) || undefined;
@@ -83,7 +80,7 @@ export function createNotesApp(
 
 	// PUT /notes/:id — update note fields/tags
 	app.put("/notes/:id", async (c) => {
-		const userId = c.get("user")?.userId ?? "local";
+		const userId = "local";
 		const noteId = c.req.param("id");
 
 		const note = await getNoteById(deps.db, userId, noteId);
@@ -105,21 +102,21 @@ export function createNotesApp(
 
 	// GET /decks — list deck names
 	app.get("/decks", async (c) => {
-		const userId = c.get("user")?.userId ?? "local";
+		const userId = "local";
 		const decks = await listDeckNames(deps.db, userId);
 		return c.json({ decks });
 	});
 
 	// GET /models — list model names
 	app.get("/models", async (c) => {
-		const userId = c.get("user")?.userId ?? "local";
+		const userId = "local";
 		const models = await listModelNames(deps.db, userId);
 		return c.json({ models });
 	});
 
 	// GET /models/:name/fields — list field names for a model
 	app.get("/models/:name/fields", async (c) => {
-		const userId = c.get("user")?.userId ?? "local";
+		const userId = "local";
 		const modelName = c.req.param("name");
 		const model = await getModel(deps.db, userId, modelName);
 		if (!model) {
@@ -130,7 +127,7 @@ export function createNotesApp(
 
 	// DELETE /notes/:id — delete a note and all associated data
 	app.delete("/notes/:id", async (c) => {
-		const userId = c.get("user")?.userId ?? "local";
+		const userId = "local";
 		const noteId = c.req.param("id");
 		const deleted = await deleteNote(deps.db, userId, noteId);
 		if (!deleted) return c.json({ error: "not found" }, 404);

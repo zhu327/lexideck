@@ -1,18 +1,18 @@
 import type { Context } from "hono";
-import type { AuthUser } from "../../auth/apiKey";
 import type { DbClient } from "../../db/client";
 import { getCardForReview, updateCardAfterReview } from "../../db/repos/cards-review";
 import { insertRevlog } from "../../db/repos/revlog";
+import type { Env } from "../../env";
 import { scheduleReview } from "../../srs/scheduler";
 import type { Rating } from "../../srs/types";
 
-type ReviewEnv = { Variables: { user: AuthUser } };
+type ReviewEnv = { Bindings: Env };
 
 const VALID_RATINGS = new Set<number>([1, 2, 3, 4]);
 
 export function createSubmitHandler(deps: { db: DbClient }) {
 	return async (c: Context<ReviewEnv>) => {
-		const userId = c.get("user")?.userId ?? "local";
+		const userId = "local";
 		const body = await c.req.json<{ cardId?: string; rating?: number }>();
 		const rating = body.rating;
 		if (!body.cardId || typeof rating !== "number" || !VALID_RATINGS.has(rating)) {

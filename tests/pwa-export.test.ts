@@ -175,8 +175,7 @@ describe("downloadApkgExport", () => {
 		vi.unstubAllGlobals();
 	});
 
-	it("calls the APKG endpoint with auth and returns the blob plus server filename", async () => {
-		(globalThis.localStorage as Storage).setItem("anki-api-key", "secret-key");
+	it("calls the APKG endpoint and returns the blob plus server filename", async () => {
 		const body = new Blob(["apkg bytes"], { type: "application/octet-stream" });
 		const fetchMock = vi.fn(
 			async () =>
@@ -190,13 +189,7 @@ describe("downloadApkgExport", () => {
 		const { downloadApkgExport } = await import("../pwa/src/api");
 		const result = await downloadApkgExport();
 
-		expect(fetchMock).toHaveBeenCalledWith(
-			"/api/export/apkg",
-			expect.objectContaining({ headers: expect.any(Headers) }),
-		);
-		const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
-		const init = calls[0][1];
-		expect(new Headers(init.headers).get("Authorization")).toBe("Bearer secret-key");
+		expect(fetchMock).toHaveBeenCalledWith("/api/export/apkg");
 		expect(result.filename).toBe("anki-vocab-2026-06-29.apkg");
 		expect(await result.blob.text()).toBe("apkg bytes");
 	});

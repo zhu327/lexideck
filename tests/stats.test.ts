@@ -1,7 +1,6 @@
 import { env } from "cloudflare:workers";
 import { Hono } from "hono";
 import { beforeEach, describe, expect, it } from "vitest";
-import { type AuthUser, apiKeyAuth } from "../src/auth/apiKey";
 import { createDbClient } from "../src/db/client";
 import type { Env } from "../src/env";
 import { createStatsApp } from "../src/stats/router";
@@ -11,8 +10,7 @@ const DECK = "deck-default-local";
 const MODEL = "model-basic-local";
 
 function makeApp() {
-	const a = new Hono<{ Bindings: Env; Variables: { user: AuthUser } }>();
-	a.use("*", apiKeyAuth());
+	const a = new Hono<{ Bindings: Env }>();
 	a.route("/api/stats", createStatsApp({ db: createDbClient(env.DB) }));
 	return a;
 }

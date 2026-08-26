@@ -1,15 +1,13 @@
 import { env } from "cloudflare:workers";
 import { Hono } from "hono";
 import { beforeEach, describe, expect, it } from "vitest";
-import { type AuthUser, apiKeyAuth } from "../src/auth/apiKey";
 import { createDbClient } from "../src/db/client";
 import type { Env } from "../src/env";
 import { createNotesApp } from "../src/notes/router";
 
-// Mount the notes app behind the auth middleware exactly like a real caller.
+// 单用户架构，userId 固定为 "local"，无需认证中间件。
 function makeApp() {
-	const a = new Hono<{ Bindings: Env; Variables: { user: AuthUser } }>();
-	a.use("*", apiKeyAuth());
+	const a = new Hono<{ Bindings: Env }>();
 	a.route("/api", createNotesApp({ db: createDbClient(env.DB) }));
 	return a;
 }
