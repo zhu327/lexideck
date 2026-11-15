@@ -1,5 +1,5 @@
 import type { Enrichment, ReviewCardView } from "./api";
-import { escapeHtml, setHtml, setText } from "./dom";
+import { escapeHtml, setHtml } from "./dom";
 import { renderFields } from "./fields";
 import { formatInterval, RATING_LABELS, type Rating, stateClass, stateLabel } from "./helpers";
 
@@ -9,10 +9,14 @@ import { formatInterval, RATING_LABELS, type Rating, stateClass, stateLabel } fr
 export function buildCardHTML(): string {
 	return `
 		<div class="card-meta"></div>
-		<div class="progress-indicator"></div>
-		<div class="card-front">
-			<span class="card-word"></span>
-			<button id="tts-btn" class="secondary" type="button" title="Listen">🔊</button>
+		<div class="progress-indicator">
+			<span class="progress-count"></span>
+			<span class="progress-track" aria-hidden="true"><span class="progress-fill"></span></span>
+		</div>
+		<div class="card-front" id="card-front" data-flippable="true">
+			<span class="card-word" aria-live="polite"></span>
+			<button id="tts-btn" class="secondary" type="button" title="Listen" aria-label="Listen to pronunciation">🔊</button>
+			<span class="card-hints" aria-hidden="true"><kbd>Space</kbd> or tap to flip</span>
 		</div>
 		<button id="flip-btn" class="primary" type="button">Show Answer</button>
 		<div id="back-wrap" hidden>
@@ -21,7 +25,8 @@ export function buildCardHTML(): string {
 				<button id="enrich-btn" class="secondary" type="button">Enrich</button>
 			</div>
 			<div id="enrich-result"></div>
-			<div class="ratings" id="ratings"></div>
+			<div class="ratings" id="ratings" role="group" aria-label="Rate your recall" tabindex="-1"></div>
+			<div class="swipe-hint" aria-hidden="true">swipe left = Again · swipe right = Good</div>
 			<button id="edit-btn" class="secondary" type="button">Edit</button>
 		</div>
 	`;
@@ -51,7 +56,11 @@ export function renderCardFields(
 	const frontKey = fieldKeys[0] ?? "";
 	setHtml(area, ".card-back", renderFields(card.fields, frontKey));
 	const current = offset - cardsLength + index + 1;
-	setText(area, ".progress-indicator", `${current} / ${total}`);
+	const progress = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
+	const countEl = area.querySelector(".progress-count");
+	if (countEl instanceof HTMLElement) countEl.textContent = `${current} / ${total}`;
+	const fillEl = area.querySelector(".progress-fill");
+	if (fillEl instanceof HTMLElement) fillEl.style.width = `${progress}%`;
 }
 
 /**
@@ -61,9 +70,10 @@ export function renderCardFields(
  */
 export function showCompletionPage(area: HTMLElement, total: number, onDone: () => void): void {
 	area.innerHTML = `
-		<div class="completion">
-			<div class="emoji">🎉</div>
+		<div class="completion" role="status">
+			<div class="emoji" aria-hidden="true">🎉</div>
 			<div class="message">今日完成 ${total} 张！</div>
+			<p class="hint completion-hint">Great work — come back tomorrow for the next batch.</p>
 			<button id="completion-home" class="primary" type="button">Done</button>
 		</div>
 	`;
@@ -102,6 +112,8 @@ export function displayEnrichment(el: HTMLElement, e: Enrichment): void {
 
 /**
  * Render rating buttons into the container.
+ * Each button carries its keyboard shortcut number so the interaction is
+ * discoverable without memorising the mapping.
  */
 export function renderRatings(container: Element | null, onSubmit: (rating: Rating) => void): void {
 	const RATINGS: Rating[] = [1, 2, 3, 4];
@@ -110,7 +122,17 @@ export function renderRatings(container: Element | null, onSubmit: (rating: Rati
 	for (const rating of RATINGS) {
 		const btn = document.createElement("button");
 		btn.type = "button";
-		btn.textContent = RATING_LABELS[rating];
+		btn.dataset.rating = String(rating);
+		btn.setAttribute("aria-keyshortcuts", String(rating));
+		const label = document.createElement("span");
+		label.className = "rating-label";
+		label.textContent = RATING_LABELS[rating];
+		const key = document.createElement("span");
+		key.className = "rating-key";
+		key.setAttribute("aria-hidden", "true");
+		key.textContent = String(rating);
+		btn.appendChild(label);
+		btn.appendChild(key);
 		btn.addEventListener("click", () => onSubmit(rating));
 		container.appendChild(btn);
 	}
@@ -126,8 +148,14 @@ export function disableButtons(container: Element | null): void {
 }
 
 /**
- * Show interval feedback after submitting a rating.
+ * Show the next interval without clearing the card. The chip is appended to
+ * the card so the answer stays on screen during the (short) advance delay.
  */
 export function showIntervalFeedback(area: HTMLElement, due: number): void {
-	area.innerHTML = `<div class="interval-feedback">Next: ${formatInterval(due)}</div>`;
+	area.querySelector(".interval-chip")?.remove();
+	const chip = document.createElement("div");
+	chip.className = "interval-chip";
+	chip.setAttribute("role", "status");
+	chip.textContent = `Next in ${formatInterval(due)}`;
+	area.appendChild(chip);
 }

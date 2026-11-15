@@ -13,6 +13,8 @@ import { setHtml } from "./dom";
 import { openEditModal } from "./edit-modal";
 import { setupEnrichButton } from "./enrichment-panel";
 import { renderFields } from "./fields";
+import { clampDragOffset, resolveSwipe, swipeIntent } from "./gestures";
+import { haptic } from "./haptics";
 import { errorMessage, type Rating } from "./helpers";
 import { registerShortcuts } from "./keyboard";
 import {
@@ -22,11 +24,14 @@ import {
 	loadNextBatch,
 	type ReviewSession,
 } from "./review-session";
-import { getSyncStatus, syncReviewOps } from "./review-sync";
-import { speak, stopSpeaking } from "./tts";
+import { getSyncStatus, PENDING_CHANGED_EVENT, syncReviewOps } from "./review-sync";
+import { speak, speakIfEnabled, stopSpeaking } from "./tts";
+import { showToast } from "./ui";
 
 // Module-level cleanup so re-entering renderReview (route change) cleans up stale bindings.
 let activeCleanup: (() => void) | null = null;
+// Aborts pointer listeners that belong to the card currently on screen.
+let cardGestureAbort: AbortController | null = null;
 
 /**
  * Remove any keyboard bindings and speech left over from an active review
@@ -37,6 +42,8 @@ export function cleanupReview(): void {
 		activeCleanup();
 		activeCleanup = null;
 	}
+	cardGestureAbort?.abort();
+	cardGestureAbort = null;
 	stopSpeaking();
 }
 
@@ -49,9 +56,17 @@ export async function renderReview(root: HTMLElement): Promise<void> {
 				<div class="page-kicker">Daily Review</div>
 				<h2 id="review-title">Review due cards</h2>
 				<p class="hint">Flip each card, recall the answer, then rate your memory.</p>
+				<span id="review-due" class="due-chip" hidden></span>
 			</section>
-			<div id="sync-status" class="sync-status"></div>
-			<div id="review-card" class="card-area">Loading…</div>
+			<div id="sync-status" class="sync-status" role="status" aria-live="polite"></div>
+			<div id="review-card" class="card-area">
+				<div class="card-skeleton" aria-hidden="true">
+					<div class="skeleton-line skeleton-line-sm"></div>
+					<div class="skeleton-line skeleton-line-word"></div>
+					<div class="skeleton-line skeleton-line-cta"></div>
+				</div>
+				<span class="visually-hidden">Loading cards…</span>
+			</div>
 			<div id="load-more-wrap" hidden>
 				<button id="load-more-btn" class="secondary" type="button">Load more reviews</button>
 			</div>
@@ -74,6 +89,14 @@ export async function renderReview(root: HTMLElement): Promise<void> {
 		await loadInitialBatch(session);
 		setCachedDueTotal(session.total);
 
+		const dueChip = root.querySelector("#review-due");
+		if (dueChip instanceof HTMLElement) {
+			const count = session.total;
+			dueChip.hidden = false;
+			dueChip.dataset.state = count > 0 ? "due" : "clear";
+			dueChip.textContent = count > 0 ? `${count} due` : "All clear";
+		}
+
 		const syncStatusEl = root.querySelector("#sync-status");
 		if (syncStatusEl instanceof HTMLElement) {
 			const status = await getSyncStatus();
@@ -84,14 +107,61 @@ export async function renderReview(root: HTMLElement): Promise<void> {
 		}
 
 		if (session.cards.length === 0) {
-			cardArea.textContent = "No cards due. Nice!";
+			showEmptyState(cardArea);
 			return;
 		}
 
 		await showCard(cardArea, loadMoreWrap, session, 0);
 	} catch (err) {
-		cardArea.textContent = `Failed to load: ${errorMessage(err)}`;
+		showErrorState(cardArea, errorMessage(err), () => {
+			renderReview(root);
+		});
 	}
+}
+
+/** Network/API failure with a retry affordance. */
+function showErrorState(area: HTMLElement, message: string, onRetry: () => void): void {
+	const block = document.createElement("div");
+	block.className = "state-block";
+	block.setAttribute("role", "status");
+	block.innerHTML = `
+		<div class="state-icon" aria-hidden="true">📡</div>
+		<div class="state-title">Couldn't load cards</div>
+		<p class="state-hint"></p>
+		<button id="review-retry-btn" class="secondary" type="button">Try again</button>
+	`;
+	const hint = block.querySelector(".state-hint");
+	if (hint instanceof HTMLElement) hint.textContent = message;
+	const retryBtn = block.querySelector("#review-retry-btn");
+	if (retryBtn instanceof HTMLButtonElement) {
+		retryBtn.addEventListener("click", onRetry);
+	}
+	area.innerHTML = "";
+	area.appendChild(block);
+}
+
+/** All-caught-up state with a route out (instead of a dead end). */
+function showEmptyState(area: HTMLElement): void {
+	area.innerHTML = `
+		<div class="state-block" role="status">
+			<div class="state-icon" aria-hidden="true">✅</div>
+			<div class="state-title">All caught up</div>
+			<p class="state-hint">No cards are due right now. Come back later or browse your deck.</p>
+			<button id="empty-browse-btn" class="primary" type="button">Browse your deck</button>
+		</div>
+	`;
+	const browseBtn = area.querySelector("#empty-browse-btn");
+	if (browseBtn instanceof HTMLButtonElement) {
+		browseBtn.addEventListener("click", () => {
+			window.location.hash = "#search";
+		});
+	}
+}
+
+/** True when the user is selecting text (so a click is not a flip/rating). */
+function hasTextSelection(): boolean {
+	if (typeof window === "undefined" || typeof window.getSelection !== "function") return false;
+	return Boolean(window.getSelection()?.toString().trim());
 }
 
 function delay(ms: number): Promise<void> {
@@ -109,7 +179,19 @@ async function showCard(
 		session.cleanupKeys();
 		session.cleanupKeys = null;
 	}
+	// Drop the previous card's pointer listeners so a swipe can only ever rate
+	// the card currently on screen.
+	cardGestureAbort?.abort();
+	const gestureAbort = new AbortController();
+	cardGestureAbort = gestureAbort;
 	stopSpeaking();
+
+	// Returning to the top of the page when the next card appears keeps the
+	// thumb on the flip/rating controls after reading a long card on mobile.
+	if (typeof window !== "undefined" && window.scrollY > 80) {
+		const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+		window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
+	}
 
 	if (index >= session.cards.length) {
 		// End of current batch — try loading more
@@ -138,6 +220,8 @@ async function showCard(
 
 	// Build card DOM
 	area.innerHTML = buildCardHTML();
+	area.classList.add("card-enter");
+	setTimeout(() => area.classList.remove("card-enter"), 260);
 	renderCardFields(area, card, index, session.offset, session.cards.length, session.total);
 
 	const ttsBtn = area.querySelector("#tts-btn");
@@ -158,18 +242,31 @@ async function showCard(
 		try {
 			const result = await submitReview(card.cardId, rating, session.scope);
 			if (result.queued) {
-				showOfflineToast(area, result.queuedReason);
+				haptic([8, 40, 8]);
+				// Keep the card on screen and confirm via the global snackbar instead
+				// of blanking the card area with a transient message.
+				showToast({
+					key: "queued-review",
+					tone: "warning",
+					message:
+						result.queuedReason === "server-error"
+							? "Server unavailable — review saved offline."
+							: "Saved offline — will sync when you're back online.",
+				});
+				if (typeof window !== "undefined") {
+					window.dispatchEvent(new Event(PENDING_CHANGED_EVENT));
+				}
 				const syncStatusEl = document.querySelector("#sync-status");
 				if (syncStatusEl instanceof HTMLElement) {
 					const status = await getSyncStatus();
 					renderSyncStatus(syncStatusEl, { ...status, offline: !navigator.onLine });
 				}
-				await delay(600);
+				await delay(200);
 				await showCard(area, loadMoreWrap, session, index + 1);
 			} else {
 				adjustCachedDueTotal(-1);
 				showIntervalFeedback(area, result.due);
-				await delay(800);
+				await delay(420);
 				await showCard(area, loadMoreWrap, session, index + 1);
 			}
 		} catch (err) {
@@ -200,11 +297,14 @@ async function showCard(
 	async function doFlip() {
 		if (flipped) return;
 		flipped = true;
+		haptic(8);
 		if (backWrap instanceof HTMLElement) backWrap.hidden = false;
 		if (flipBtn instanceof HTMLButtonElement) flipBtn.hidden = true;
+		const frontEl = area.querySelector("#card-front");
+		if (frontEl instanceof HTMLElement) frontEl.dataset.flippable = "false";
 		area.classList.add("flipping");
 		setTimeout(() => area.classList.remove("flipping"), 300);
-		speak(currentFront());
+		speakIfEnabled(currentFront());
 		// Cleanup front-side bindings, register rating shortcuts
 		if (session.cleanupKeys) {
 			session.cleanupKeys();
@@ -219,6 +319,13 @@ async function showCard(
 		activeCleanup = session.cleanupKeys;
 		renderRatings(ratingsEl, submitRating);
 
+		// Move focus onto the answer region so screen readers announce the back
+		// side and the rating shortcut numbers are the next tab stops.
+		if (backWrap instanceof HTMLElement) {
+			backWrap.setAttribute("tabindex", "-1");
+			backWrap.focus({ preventScroll: true });
+		}
+
 		// Auto-load enrichment — cached per note for this session to avoid
 		// re-fetching the same note on every flip.
 		const cached = session.enrichmentCache.get(card.noteId);
@@ -229,6 +336,17 @@ async function showCard(
 			}
 			return;
 		}
+		// Reserve the enrichment block with a skeleton so the rating row does not
+		// jump under the user's thumb when the answer arrives.
+		if (enrichResult instanceof HTMLElement) {
+			enrichResult.innerHTML = `
+				<div class="enrich-skeleton" aria-hidden="true">
+					<div class="skeleton-line"></div>
+					<div class="skeleton-line"></div>
+					<div class="skeleton-line skeleton-line-short"></div>
+				</div>
+			`;
+		}
 		const fetched = await fetchEnrichment(card.noteId);
 		session.enrichmentCache.set(card.noteId, fetched);
 		if (fetched) {
@@ -238,6 +356,9 @@ async function showCard(
 			if (enrichBtn instanceof HTMLButtonElement) {
 				enrichBtn.textContent = "Refresh";
 			}
+		} else if (enrichResult instanceof HTMLElement) {
+			enrichResult.innerHTML =
+				'<div class="enrich-empty">No enrichment yet — tap Enrich to generate one.</div>';
 		}
 	}
 
@@ -248,6 +369,76 @@ async function showCard(
 	if (flipBtn instanceof HTMLButtonElement) {
 		flipBtn.addEventListener("click", doFlip);
 	}
+
+	// Tap anywhere on the word to reveal the answer (the whole card is the
+	// target, matching how people expect a paper flashcard to behave).
+	const cardFront = area.querySelector("#card-front");
+	if (cardFront instanceof HTMLElement) {
+		cardFront.addEventListener("click", (event) => {
+			const target = event.target as Element | null;
+			if (target?.closest("button, a, input, textarea, select")) return;
+			if (hasTextSelection()) return; // copying the word must not flip the card
+			void doFlip();
+		});
+	}
+
+	/* ── Swipe to rate ──────────────────────────────────── */
+	// Left = Again, right = Good. Horizontal-only so vertical scrolling still
+	// works; the drag offset is painted as a subtle card translation.
+	let dragStart: { x: number; y: number; pointerId: number } | null = null;
+
+	const resetDrag = (): void => {
+		dragStart = null;
+		area.classList.remove("swiping", "swipe-left", "swipe-right");
+		area.style.removeProperty("--swipe-x");
+	};
+
+	const onPointerDown = (event: PointerEvent): void => {
+		if (!flipped || ratingSubmitted) return;
+		if (event.pointerType === "mouse" && event.button !== 0) return;
+		const target = event.target as Element | null;
+		if (target?.closest("button, a, input, textarea, select")) return;
+		dragStart = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+		try {
+			area.setPointerCapture(event.pointerId);
+		} catch {
+			// Pointer capture is an enhancement; dragging still works without it.
+		}
+	};
+
+	const onPointerMove = (event: PointerEvent): void => {
+		if (!dragStart || event.pointerId !== dragStart.pointerId) return;
+		const dx = event.clientX - dragStart.x;
+		const intent = swipeIntent(dx);
+		if (intent === null) {
+			area.classList.remove("swiping", "swipe-left", "swipe-right");
+			area.style.removeProperty("--swipe-x");
+			return;
+		}
+		area.classList.add("swiping");
+		area.classList.toggle("swipe-right", intent === "right");
+		area.classList.toggle("swipe-left", intent === "left");
+		area.style.setProperty("--swipe-x", `${clampDragOffset(dx)}px`);
+	};
+
+	const onPointerUp = (event: PointerEvent): void => {
+		if (!dragStart || event.pointerId !== dragStart.pointerId) return;
+		const dx = event.clientX - dragStart.x;
+		const dy = event.clientY - dragStart.y;
+		resetDrag();
+		if (!flipped || ratingSubmitted) return;
+		if (hasTextSelection()) return; // selecting text must not rate the card
+		const rating = resolveSwipe({ dx, dy });
+		if (rating === null) return;
+		haptic(12);
+		void submitRating(rating);
+	};
+
+	const gestureOptions = { signal: gestureAbort.signal };
+	area.addEventListener("pointerdown", onPointerDown, gestureOptions);
+	area.addEventListener("pointermove", onPointerMove, gestureOptions);
+	area.addEventListener("pointerup", onPointerUp, gestureOptions);
+	area.addEventListener("pointercancel", resetDrag, gestureOptions);
 
 	// Register front-side keyboard shortcuts: Space/Enter to flip
 	session.cleanupKeys = registerShortcuts([
@@ -320,9 +511,4 @@ async function triggerSync(statusEl: HTMLElement): Promise<void> {
 	await syncReviewOps();
 	const status = await getSyncStatus();
 	renderSyncStatus(statusEl, { ...status, offline: !navigator.onLine });
-}
-
-function showOfflineToast(area: HTMLElement, reason?: string): void {
-	const msg = reason === "server-error" ? "服务异常，已离线保存" : "已离线保存，联网后同步";
-	area.innerHTML = `<div class="offline-toast">${msg}</div>`;
 }

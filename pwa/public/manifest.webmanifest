@@ -1,37 +1,67 @@
 {
+	"id": "/",
 	"name": "Anki Vocab",
 	"short_name": "Anki",
 	"description": "Spaced repetition vocabulary review. Learn and retain words with intelligent scheduling.",
 	"start_url": "/",
 	"scope": "/",
 	"display": "standalone",
-	"display_override": ["window-controls-overlay", "standalone"],
-	"background_color": "#f5f5f7",
-	"theme_color": "#ffffff",
+	"display_override": ["standalone", "minimal-ui"],
+	"background_color": "#f7f4ed",
+	"theme_color": "#f7f4ed",
 	"categories": ["education", "productivity"],
 	"lang": "en",
 	"orientation": "any",
 	"launch_handler": {
 		"client_mode": ["navigate-existing", "auto"]
 	},
+	"shortcuts": [
+		{
+			"name": "Review due cards",
+			"short_name": "Review",
+			"description": "Start today's spaced-repetition session",
+			"url": "/#review",
+			"icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+		},
+		{
+			"name": "Search notes",
+			"short_name": "Search",
+			"description": "Look up vocabulary in your collection",
+			"url": "/#search",
+			"icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+		},
+		{
+			"name": "Learning stats",
+			"short_name": "Stats",
+			"description": "See streak, retention and activity",
+			"url": "/#stats",
+			"icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+		}
+	],
 	"icons": [
 		{
 			"src": "/icon-192.png",
 			"sizes": "192x192",
 			"type": "image/png",
-			"purpose": "any maskable"
+			"purpose": "any"
 		},
 		{
 			"src": "/icon-512.png",
 			"sizes": "512x512",
 			"type": "image/png",
-			"purpose": "any maskable"
+			"purpose": "any"
+		},
+		{
+			"src": "/icon-512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "maskable"
 		},
 		{
 			"src": "/icon.svg",
 			"sizes": "any",
 			"type": "image/svg+xml",
-			"purpose": "any maskable"
+			"purpose": "any"
 		}
 	],
 	"screenshots": [],

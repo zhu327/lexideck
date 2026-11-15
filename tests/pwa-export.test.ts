@@ -251,11 +251,14 @@ describe("Search APKG export UI", () => {
 		revokeObjectURL = vi.fn();
 		vi.stubGlobal("document", {
 			body,
+			activeElement: null,
 			createElement: (tagName: string) => {
 				const element = new FakeElement(tagName);
 				if (tagName === "a") createdAnchors.push(element);
 				return element;
 			},
+			addEventListener: () => {},
+			removeEventListener: () => {},
 		});
 		const urlConstructor = URL as typeof URL & {
 			createObjectURL: (blob: Blob) => string;

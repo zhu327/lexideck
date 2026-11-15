@@ -1,6 +1,7 @@
 import { type ActivityDay, fetchActivity, fetchStats } from "./api";
 import { escapeHtml } from "./dom";
 import { errorMessage } from "./helpers";
+import { showToast } from "./ui";
 
 interface GraphCell {
 	date: string | null;
@@ -110,10 +111,10 @@ function renderActivityGraph(days: ActivityDay[], total: number): string {
 						if (c.date === null) {
 							return `<span class="contrib-cell contrib-empty"></span>`;
 						}
-						const title = `${c.count} review${c.count === 1 ? "" : "s"} on ${c.date}`;
+						const label = `${c.count} review${c.count === 1 ? "" : "s"} on ${c.date}`;
 						return `<span class="contrib-cell contrib-l${c.level}" title="${escapeHtml(
-							title,
-						)}"></span>`;
+							label,
+						)}" data-date="${escapeHtml(c.date)}" data-count="${c.count}"></span>`;
 					})
 					.join("")}</div>`,
 		)
@@ -155,7 +156,20 @@ export async function renderStats(root: HTMLElement): Promise<void> {
 				<h2 id="stats-title">Your memory practice at a glance</h2>
 				<p class="hint">Track today's rhythm, retention, and the shape of your deck.</p>
 			</section>
-			<div id="stats-area" class="stats-area">Loading stats…</div>
+			<div id="stats-area" class="stats-area">
+				<div class="stats-grid" aria-hidden="true">
+					${Array.from({ length: 6 })
+						.map(
+							() => `
+						<div class="stat-card stat-card-skeleton">
+							<div class="skeleton-line skeleton-line-value"></div>
+							<div class="skeleton-line skeleton-line-sm"></div>
+						</div>`,
+						)
+						.join("")}
+				</div>
+				<span class="visually-hidden">Loading stats…</span>
+			</div>
 		</div>
 	`;
 
@@ -165,41 +179,67 @@ export async function renderStats(root: HTMLElement): Promise<void> {
 	try {
 		const [s, activity] = await Promise.all([fetchStats(), fetchActivity(365).catch(() => null)]);
 		const retention = s.todayRetention !== null ? `${Math.round(s.todayRetention * 100)}%` : "—";
+		const fmt = (value: number): string => value.toLocaleString("en-US");
 		area.innerHTML = `
 			<div class="stats-grid">
 				<div class="stat-card">
-					<span class="stat-value">${s.todayReviews}</span>
+					<span class="stat-value">${fmt(s.todayReviews)}</span>
 					<span class="stat-label">Today's Reviews</span>
 				</div>
 				<div class="stat-card">
-					<span class="stat-value">${s.streak} 🔥</span>
+					<span class="stat-value">${fmt(s.streak)}<span class="stat-flame" aria-hidden="true">🔥</span></span>
 					<span class="stat-label">Streak (days)</span>
 				</div>
 				<div class="stat-card">
 					<span class="stat-value">${retention}</span>
-					<span class="stat-label">Today Retention</span>
+					<span class="stat-label" title="Share of today's reviews rated Good or Easy">Retention today</span>
 				</div>
 				<div class="stat-card">
-					<span class="stat-value">${s.totalCards}</span>
+					<span class="stat-value">${fmt(s.totalCards)}</span>
 					<span class="stat-label">Total Cards</span>
 				</div>
 				<div class="stat-card">
-					<span class="stat-value">${s.newCards}</span>
+					<span class="stat-value">${fmt(s.newCards)}</span>
 					<span class="stat-label">New</span>
 				</div>
 				<div class="stat-card">
-					<span class="stat-value">${s.learningCards}</span>
+					<span class="stat-value">${fmt(s.learningCards)}</span>
 					<span class="stat-label">Learning</span>
 				</div>
 				<div class="stat-card">
-					<span class="stat-value">${s.reviewCards}</span>
+					<span class="stat-value">${fmt(s.reviewCards)}</span>
 					<span class="stat-label">Review</span>
 				</div>
 			</div>
+			<p class="stats-footnote">Retention counts today's reviews you rated Good or Easy.</p>
 			${activity ? renderActivityGraph(activity.days, activity.total) : ""}
 		`;
+		// Heatmap cells are 11px; on touch the hover title is unreachable, so a
+		// tap surfaces the same information as a toast.
+		const grid = area.querySelector(".contrib-grid");
+		grid?.addEventListener("click", (event) => {
+			const cell = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+				".contrib-cell[data-date]",
+			);
+			if (!cell?.dataset.date) return;
+			const count = Number(cell.dataset.count ?? 0);
+			showToast({
+				message: `${count} review${count === 1 ? "" : "s"} on ${cell.dataset.date}`,
+				duration: 2200,
+			});
+		});
 		if (activity) scrollActivityToLatest(area);
 	} catch (err) {
-		area.textContent = `Failed to load stats: ${errorMessage(err)}`;
+		area.innerHTML = `
+			<div class="state-block" role="status">
+				<div class="state-icon" aria-hidden="true">📊</div>
+				<div class="state-title">Stats unavailable</div>
+				<p class="state-hint">${escapeHtml(`Failed to load stats: ${errorMessage(err)}`)}</p>
+				<button id="stats-retry-btn" class="secondary" type="button">Try again</button>
+			</div>
+		`;
+		area.querySelector("#stats-retry-btn")?.addEventListener("click", () => {
+			renderStats(root);
+		});
 	}
 }

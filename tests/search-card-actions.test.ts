@@ -124,6 +124,14 @@ class FakeElement {
 		return null;
 	}
 
+	focus(_options?: unknown): void {
+		// Focus is a no-op in this stub; the sheet still relies on it existing.
+	}
+
+	get isConnected(): boolean {
+		return true;
+	}
+
 	querySelector<T>(selector: string): T | null {
 		return (this.querySelectorAll<T>(selector)[0] as T | undefined) ?? null;
 	}
@@ -145,6 +153,8 @@ function matches(element: FakeElement, selector: string): boolean {
 	if (selector.startsWith("#")) return element.id === selector.slice(1);
 	return element.tagName.toLowerCase() === selector.toLowerCase();
 }
+
+let stubDocumentListeners = new Map<string, ((event: unknown) => void)[]>();
 
 const fetchEnrichment = vi.fn();
 const markFamiliar = vi.fn();
@@ -190,10 +200,26 @@ describe("attachCardActions", () => {
 		unmarkFamiliar.mockResolvedValue(undefined);
 		deleteNote.mockResolvedValue(undefined);
 		enrichNote.mockResolvedValue({ error: "unavailable" });
+
+		const body = new FakeElement("body");
+		const docListeners = new Map<string, ((event: unknown) => void)[]>();
 		vi.stubGlobal("document", {
-			body: new FakeElement("body"),
+			body,
+			activeElement: null,
 			createElement: (tagName: string) => new FakeElement(tagName),
+			querySelector: (selector: string) => body.querySelector(selector),
+			querySelectorAll: (selector: string) => body.querySelectorAll(selector),
+			addEventListener: (type: string, listener: (event: unknown) => void) => {
+				docListeners.set(type, [...(docListeners.get(type) ?? []), listener]);
+			},
+			removeEventListener: (type: string, listener: (event: unknown) => void) => {
+				docListeners.set(
+					type,
+					(docListeners.get(type) ?? []).filter((item) => item !== listener),
+				);
+			},
 		});
+		stubDocumentListeners = docListeners;
 	});
 
 	it("opens the selected note in a bottom sheet with previous and next controls", async () => {
@@ -219,13 +245,13 @@ describe("attachCardActions", () => {
 		);
 		expect(sheet).not.toBeNull();
 		expect(sheet?.textContent).toContain("apple");
-		expect(sheet?.textContent).not.toContain("Mark Known");
+		expect(sheet?.textContent).toContain("Mark Known");
 		expect(sheet?.textContent).toContain("‹ Prev");
 		expect(sheet?.textContent).not.toContain("‹ Previous");
 		expect(sheet?.textContent).toContain("×");
 		expect(sheet?.querySelector(".search-sheet-prev")).not.toBeNull();
 		expect(sheet?.querySelector(".search-sheet-next")).not.toBeNull();
-		expect(sheet?.querySelector(".search-known-btn")).toBeNull();
+		expect(sheet?.textContent).toContain("Enrich");
 		expect(results.querySelector(".search-expanded")).toBeNull();
 	});
 
@@ -283,5 +309,47 @@ describe("attachCardActions", () => {
 			(document.body as unknown as FakeElement).querySelector<FakeElement>(".search-sheet-prev")
 				?.disabled,
 		).toBe(false);
+	});
+
+	it("closes the bottom sheet on Escape", async () => {
+		const item = note("1", "apple", "苹果");
+		const results = document.createElement("div") as unknown as FakeElement;
+		results.append(renderRow(item) as unknown as FakeElement);
+		const cache = new Map([[item.noteId, item]]);
+		const { attachCardActions } = await import("../pwa/src/search-card-actions");
+		attachCardActions(results as unknown as HTMLElement, cache);
+
+		results.querySelector<FakeElement>('[data-note-id="1"]')?.click();
+		await Promise.resolve();
+
+		for (const handler of stubDocumentListeners.get("keydown") ?? []) {
+			handler({ key: "Escape", preventDefault: () => {} });
+		}
+
+		expect((document.body as unknown as FakeElement).querySelector(".search-sheet")).toBeNull();
+	});
+
+	it("opens the sheet with Enter from a focused row", async () => {
+		const item = note("1", "apple", "苹果");
+		const results = document.createElement("div") as unknown as FakeElement;
+		results.append(renderRow(item) as unknown as FakeElement);
+		const cache = new Map([[item.noteId, item]]);
+		const { attachCardActions } = await import("../pwa/src/search-card-actions");
+		attachCardActions(results as unknown as HTMLElement, cache);
+
+		const row = results.querySelector<FakeElement>('[data-note-id="1"]');
+		const handler = results.listeners.get("keydown")?.[0];
+		handler?.({
+			key: "Enter",
+			target: row,
+			stopPropagation: () => {},
+			preventDefault: () => {},
+		} as unknown as { target: FakeElement; stopPropagation: () => void });
+		await Promise.resolve();
+
+		const sheet = (document.body as unknown as FakeElement).querySelector<FakeElement>(
+			".search-sheet",
+		);
+		expect(sheet?.textContent).toContain("apple");
 	});
 });

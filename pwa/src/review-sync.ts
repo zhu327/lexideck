@@ -21,6 +21,9 @@ export interface SyncStatus {
 	lastError?: string;
 }
 
+/** Window event fired whenever the local review queue length may have changed. */
+export const PENDING_CHANGED_EVENT = "lexideck:pending-changed";
+
 let syncMutex: Promise<void> | null = null;
 
 export async function syncReviewOps(): Promise<SyncResult> {

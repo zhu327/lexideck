@@ -13,8 +13,14 @@ import { escapeHtml, sanitizeFieldHtml } from "./dom";
 import { renderFields } from "./fields";
 import { errorMessage } from "./helpers";
 import { speak } from "./tts";
+import { showToast } from "./ui";
 
 let expandedNoteId: string | null = null;
+let sheetKeyHandler: ((event: KeyboardEvent) => void) | null = null;
+let sheetOpener: HTMLElement | null = null;
+
+/** Cancel the "tap again to delete" armed state for a delete button. */
+const pendingDeleteResets = new WeakMap<HTMLButtonElement, () => void>();
 
 export interface AttachCardActionsOptions {
 	/** Called after a note is successfully deleted from the server and DOM. */
@@ -36,7 +42,7 @@ export function attachCardActions(
 			const row = target.closest(".search-row") as HTMLElement | null;
 			if (!row?.dataset.noteId) return;
 			if (expandedNoteId === row.dataset.noteId) {
-				collapseNote(results);
+				closeNoteSheet();
 			} else {
 				await openNoteSheet(results, row.dataset.noteId, noteCache, onClick);
 			}
@@ -46,8 +52,14 @@ export function attachCardActions(
 		const btn = target as HTMLButtonElement;
 		e.stopPropagation();
 
-		if (btn.classList.contains("search-sheet-close")) {
-			collapseNote(results);
+		if (btn.classList.contains("search-front")) {
+			const row = btn.closest(".search-row") as HTMLElement | null;
+			const noteId = row?.dataset.noteId;
+			if (!noteId) return;
+			if (expandedNoteId === noteId) closeNoteSheet();
+			else await openNoteSheet(results, noteId, noteCache, onClick);
+		} else if (btn.classList.contains("search-sheet-close")) {
+			closeNoteSheet();
 		} else if (btn.classList.contains("search-sheet-prev")) {
 			await navigateSheet(results, noteCache, -1, onClick);
 		} else if (btn.classList.contains("search-sheet-next")) {
@@ -55,7 +67,7 @@ export function attachCardActions(
 		} else if (btn.classList.contains("search-known-btn")) {
 			await handleKnown(btn, results, noteCache);
 		} else if (btn.classList.contains("search-delete-btn")) {
-			await handleDelete(btn, results, noteCache, onDeleted);
+			await handleDelete(btn, noteCache, onDeleted);
 		} else if (btn.classList.contains("search-tts-btn")) {
 			const text = btn.dataset.text;
 			if (text) speak(text);
@@ -65,7 +77,24 @@ export function attachCardActions(
 	};
 
 	results.addEventListener("click", onClick);
-	return () => results.removeEventListener("click", onClick);
+
+	// Rows are keyboard-activatable: Enter/Space opens the detail sheet.
+	const onKeyDown = (event: Event): void => {
+		const key = (event as KeyboardEvent).key;
+		if (key !== "Enter" && key !== " ") return;
+		const target = event.target as HTMLElement | null;
+		if (!target || target.tagName === "BUTTON") return;
+		const row = target.closest(".search-row") as HTMLElement | null;
+		if (!row?.dataset.noteId) return;
+		event.preventDefault();
+		void openNoteSheet(results, row.dataset.noteId, noteCache, onClick);
+	};
+	results.addEventListener("keydown", onKeyDown);
+
+	return () => {
+		results.removeEventListener("click", onClick);
+		results.removeEventListener("keydown", onKeyDown);
+	};
 }
 
 /* ── Handler helpers ─────────────────────────────────── */
@@ -84,11 +113,10 @@ async function handleKnown(
 	if (!noteId) return;
 
 	const isKnown = btn.dataset.known === "true";
-	const originalText = btn.textContent;
-	const originalClass = btn.className;
 
+	// Optimistic: flip the visual state immediately, roll back if the API fails.
+	applyKnownState(btn, !isKnown);
 	btn.disabled = true;
-	btn.textContent = isKnown ? "Unmarking…" : "Marking…";
 
 	try {
 		if (isKnown) {
@@ -96,11 +124,10 @@ async function handleKnown(
 		} else {
 			await markFamiliar(noteId);
 		}
-		applyKnownState(btn, !isKnown);
 		const cached = noteCache.get(noteId);
 		if (cached) cached.known = !isKnown;
 
-		// Sync the other button (row ↔ expanded card)
+		// Sync the other button (row ↔ sheet)
 		const rowBtn = results.querySelector(
 			`.search-row[data-note-id="${noteId}"] .search-known-btn`,
 		) as HTMLButtonElement | null;
@@ -111,9 +138,8 @@ async function handleKnown(
 			if (otherBtn && otherBtn !== btn) applyKnownState(otherBtn, !isKnown);
 		}
 	} catch (err) {
-		btn.textContent = originalText ?? "";
-		btn.className = originalClass;
-		alert(`Failed to update: ${errorMessage(err)}`);
+		applyKnownState(btn, isKnown);
+		showToast({ tone: "error", message: `Couldn't update: ${errorMessage(err)}` });
 	} finally {
 		btn.disabled = false;
 	}
@@ -121,7 +147,6 @@ async function handleKnown(
 
 async function handleDelete(
 	btn: HTMLButtonElement,
-	results: HTMLElement,
 	noteCache: Map<string, NoteSearchResult>,
 	onDeleted?: () => void,
 ): Promise<void> {
@@ -130,19 +155,39 @@ async function handleDelete(
 	const noteId = row.dataset.noteId;
 	if (!noteId) return;
 
-	if (!confirm("确定删除这条词条吗？")) return;
+	// Two-step confirmation instead of a blocking window.confirm(): the first
+	// tap arms the button for ~3s, the second deletes.
+	if (btn.dataset.confirm !== "true") {
+		const reset = (): void => {
+			pendingDeleteResets.delete(btn);
+			delete btn.dataset.confirm;
+			btn.classList.remove("confirming");
+			btn.textContent = "×";
+			btn.title = "Delete";
+			btn.setAttribute("aria-label", "Delete note");
+		};
+		pendingDeleteResets.set(btn, reset);
+		btn.dataset.confirm = "true";
+		btn.classList.add("confirming");
+		btn.textContent = "Delete?";
+		btn.title = "Tap again to delete";
+		btn.setAttribute("aria-label", "Confirm delete");
+		setTimeout(reset, 3200);
+		return;
+	}
 
+	pendingDeleteResets.get(btn)?.();
 	btn.disabled = true;
 	try {
 		await deleteNote(noteId);
 		row.remove();
 		noteCache.delete(noteId);
-		if (expandedNoteId === noteId) collapseNote(results);
+		if (expandedNoteId === noteId) closeNoteSheet();
 		onDeleted?.();
+		showToast({ tone: "success", message: "Note deleted." });
 	} catch (err) {
-		alert(`删除失败: ${errorMessage(err)}`);
-	} finally {
 		btn.disabled = false;
+		showToast({ tone: "error", message: `Delete failed: ${errorMessage(err)}` });
 	}
 }
 
@@ -184,6 +229,7 @@ async function handleEnrich(btn: HTMLButtonElement): Promise<void> {
 function applyKnownState(btn: HTMLButtonElement, known: boolean): void {
 	btn.textContent = known ? "Unmark" : "Mark Known";
 	btn.dataset.known = String(known);
+	btn.setAttribute("aria-pressed", String(known));
 	btn.classList.toggle("known", known);
 	btn.classList.toggle("secondary", !known);
 }
@@ -196,7 +242,12 @@ async function openNoteSheet(
 	noteCache: Map<string, NoteSearchResult>,
 	onClick: (e: Event) => Promise<void>,
 ): Promise<void> {
-	collapseNote(results);
+	// Remember which row opened the sheet so focus can be restored on close.
+	const opener =
+		(results.querySelector(`.search-row[data-note-id="${noteId}"]`) as HTMLElement | null) ??
+		sheetOpener;
+	closeNoteSheet();
+	sheetOpener = opener;
 
 	const note = noteCache.get(noteId);
 	if (!note) return;
@@ -257,12 +308,13 @@ async function openNoteSheet(
 	content.innerHTML = `
 		<div class="search-expanded-header">
 			<div class="search-expanded-front">${sanitizeFieldHtml(frontText)}</div>
-			<button type="button" class="search-tts-btn secondary" data-text="${escapeHtml(frontText)}" title="Listen">🔊</button>
+			<button type="button" class="search-tts-btn secondary" data-text="${escapeHtml(frontText)}" title="Listen" aria-label="Listen to pronunciation">🔊</button>
 		</div>
 		<div class="search-expanded-fields">
 			${fieldsHtml}
 		</div>
 		<div class="search-enrich-actions">
+			<button type="button" class="search-known-btn ${note.known ? "known" : "secondary"}" data-known="${note.known}">${note.known ? "Unmark" : "Mark Known"}</button>
 			<button type="button" class="search-enrich-btn secondary">Enrich</button>
 		</div>
 		<div class="search-enrich-area">
@@ -275,6 +327,76 @@ async function openNoteSheet(
 	backdrop.appendChild(sheet);
 	document.body.appendChild(backdrop);
 	expandedNoteId = noteId;
+
+	// Tap the dimmed area to dismiss (parity with native sheets).
+	backdrop.addEventListener("click", (event) => {
+		if (event.target === backdrop) closeNoteSheet();
+	});
+
+	// Drag the header down to dismiss.
+	let dragStartY: number | null = null;
+	let dragPointerId: number | null = null;
+	const resetDragStyles = (): void => {
+		sheet.style.transition = "";
+		sheet.style.transform = "";
+		sheet.style.opacity = "";
+	};
+	const onHeaderPointerDown = (event: PointerEvent): void => {
+		if ((event.target as Element | null)?.closest("button")) return;
+		dragStartY = event.clientY;
+		dragPointerId = event.pointerId;
+		sheet.style.transition = "none";
+		try {
+			header.setPointerCapture(event.pointerId);
+		} catch {
+			// Pointer capture is an enhancement only.
+		}
+	};
+	const onHeaderPointerMove = (event: PointerEvent): void => {
+		if (dragStartY === null || event.pointerId !== dragPointerId) return;
+		const dy = Math.max(0, event.clientY - dragStartY);
+		sheet.style.transform = `translateY(${dy}px)`;
+		sheet.style.opacity = String(Math.max(0.35, 1 - dy / 480));
+	};
+	const onHeaderPointerEnd = (event: PointerEvent): void => {
+		if (dragStartY === null || event.pointerId !== dragPointerId) return;
+		const dy = Math.max(0, event.clientY - dragStartY);
+		dragStartY = null;
+		dragPointerId = null;
+		resetDragStyles();
+		if (dy > 96) closeNoteSheet();
+	};
+	header.addEventListener("pointerdown", onHeaderPointerDown);
+	header.addEventListener("pointermove", onHeaderPointerMove);
+	header.addEventListener("pointerup", onHeaderPointerEnd);
+	header.addEventListener("pointercancel", onHeaderPointerEnd);
+
+	// Escape closes, Tab stays inside the dialog.
+	sheetKeyHandler = (event: KeyboardEvent): void => {
+		if (event.key === "Escape") {
+			event.preventDefault();
+			closeNoteSheet();
+			return;
+		}
+		if (event.key !== "Tab") return;
+		const focusables = [
+			...sheet.querySelectorAll<HTMLElement>(
+				"button:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])",
+			),
+		];
+		if (focusables.length === 0) return;
+		const first = focusables[0];
+		const last = focusables[focusables.length - 1];
+		if (event.shiftKey && document.activeElement === first) {
+			event.preventDefault();
+			last.focus();
+		} else if (!event.shiftKey && document.activeElement === last) {
+			event.preventDefault();
+			first.focus();
+		}
+	};
+	document.addEventListener("keydown", sheetKeyHandler, true);
+	closeBtn.focus({ preventScroll: true });
 
 	const enrichArea = sheet.querySelector(".search-enrich-area") as HTMLElement | null;
 
@@ -317,8 +439,20 @@ function visibleNoteIds(results: HTMLElement, noteCache: Map<string, NoteSearchR
 		.filter((noteId): noteId is string => Boolean(noteId && noteCache.has(noteId)));
 }
 
-function collapseNote(results: HTMLElement): void {
-	results.querySelector(".search-expanded")?.remove();
+/**
+ * Close the detail sheet (if open) and restore focus to the row that opened
+ * it. Safe to call on route changes — it only touches sheet-owned nodes.
+ */
+export function closeNoteSheet(): void {
+	const wasOpen = expandedNoteId !== null;
+	document.querySelector(".search-expanded")?.remove();
 	document.body.querySelector(".search-sheet-backdrop")?.remove();
 	expandedNoteId = null;
+	if (sheetKeyHandler) {
+		document.removeEventListener("keydown", sheetKeyHandler, true);
+		sheetKeyHandler = null;
+	}
+	const opener = sheetOpener;
+	sheetOpener = null;
+	if (wasOpen && opener?.isConnected) opener.focus({ preventScroll: true });
 }

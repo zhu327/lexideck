@@ -50,13 +50,16 @@ self.addEventListener("install", (event) => {
 		(async () => {
 			const cache = await caches.open(CACHE_NAME);
 			const urls = [...new Set([...APP_SHELL, ...PRECACHE_URLS])];
-			try {
-				await cache.addAll(urls);
-			} catch (err) {
-				// Individual asset failures are non-fatal; cache what we can.
-				console.warn("[sw] install: some assets not cached", err);
+			// Cache entries individually: a single missing asset must not discard the
+			// whole app shell (cache.addAll is atomic).
+			const results = await Promise.allSettled(urls.map((url) => cache.add(url)));
+			const failed = results.filter((result) => result.status === "rejected").length;
+			if (failed > 0) {
+				console.warn(`[sw] install: ${failed}/${urls.length} assets not cached`);
 			}
-			self.skipWaiting();
+			// No skipWaiting() here: the page decides when to activate a new
+			// version so a reload never happens mid-review (see the update toast
+			// in main.ts).
 		})(),
 	);
 });
@@ -121,11 +124,15 @@ async function navigationStrategy(request) {
 		}
 		return response;
 	} catch {
-		// Try cache
+		// Try the requested URL, then the precached app shell, then the standalone
+		// offline page. The shell always exists after install, so the app boots
+		// (and shows cached cards) instead of a dead-end page.
 		const cached = await caches.match(request);
 		if (cached) return cached;
 
-		// Offline fallback page
+		const shell = await caches.match("/");
+		if (shell) return shell;
+
 		const offline = await caches.match("/offline.html");
 		if (offline) return offline;
 

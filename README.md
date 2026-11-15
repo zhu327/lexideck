@@ -25,12 +25,24 @@ LexiDeck 是一个基于 **Cloudflare Workers + D1 + PWA** 的轻量级间隔重
 
 | 功能 | 说明 |
 |------|------|
-| **Review** | 翻卡 → 评分，支持 TTS 发音、快捷键（Space 翻卡，1-4 评分）、Enrichment 增强 |
-| **Search** | 词库中心：搜索与浏览全部笔记、分页加载、标记/取消 Known、展开卡片查看字段与 Enrichment、导出 `.apkg` |
-| **Stats** | 学习统计：今日复习数、连续天数、总卡片数、各状态分布 |
-| **离线支持** | Service Worker 缓存 + 离线复习队列，恢复网络后自动同步 |
+| **Review** | 翻卡 → 评分：点击卡片任意位置翻卡，左右滑动快速评分，滑动时卡片带方向反馈；TTS 发音（可在顶部一键静音自动发音）、Enrichment 增强 |
+| **Search** | 词库中心：搜索与浏览全部笔记、分页加载、标记/取消 Known、底部卡片详情（键盘可操作、Esc 关闭）、导出 `.apkg` |
+| **Stats** | 学习统计：今日复习数、连续天数、正确率、总卡片数与状态分布；热力图格子可点按查看当天复习数 |
+| **离线支持** | Service Worker 缓存 + 离线复习队列；离线/恢复联网、同步结果、待同步数量都有全局提示与 Review 标签角标 |
+| **安装与更新** | 支持浏览器「安装应用」引导（iOS 提供添加到主屏幕指引）；检测到新版本时提示手动重载，不会打断正在进行的复习 |
 | **Badge 通知** | 通过 Web Badge API 在 PWA 图标上显示待复习数量 |
 | **Enrichment 面板** | 复习或 Search 展开时一键调用 LLM 生成词汇增强内容，结果自动缓存 |
+
+#### 快捷操作
+
+| 操作 | 方式 |
+|------|------|
+| 翻卡 | 点击卡片 / `Space` / `Enter` |
+| 评分 | 点击评分按钮 / `1`–`4`（按钮右下角显示对应数字） |
+| 快速评分 | 卡片上左滑 = Again，右滑 = Good |
+| 关闭弹窗 | `Esc`（编辑弹窗、词条详情）；底部弹层也可点遮罩或下拉关闭 |
+| 聚焦搜索 | 词库页按 `/` |
+| 自动发音 | 顶部 🔊 / 🔇 按钮，选择会保存在本机 |
 
 ---
 
@@ -239,7 +251,7 @@ Basic Model 有两个字段：`Front` 和 `Back`。按如下方式配置映射�
 ├── pwa/                    # PWA 前端源码
 │   ├── index.html
 │   └── src/
-│       ├── main.ts         # 入口、路由、Service Worker
+│       ├── main.ts         # 入口、路由、联网状态、Service Worker 更新与分发
 │       ├── review.ts       # 复习界面
 │       ├── search.ts       # 词库中心：搜索、浏览、Known、展开卡片
 │       ├── stats.ts        # 统计界面
@@ -250,6 +262,10 @@ Basic Model 有两个字段：`Front` 和 `Back`。按如下方式配置映射�
 │       ├── fields.ts       # 字段渲染辅助
 │       ├── edit-modal.ts   # 笔记编辑弹窗
 │       ├── keyboard.ts     # 快捷键处理
+│       ├── gestures.ts     # 滑动手势判定（可单测）
+│       ├── ui.ts           # 全局 toast / 提示层
+│       ├── install.ts      # 安装引导（beforeinstallprompt / iOS）
+│       ├── haptics.ts      # 触感反馈
 │       ├── offline-review.ts  # 离线复习队列
 │       ├── review-session.ts  # 复习会话管理
 │       ├── review-sync.ts  # 离线同步
@@ -290,5 +306,5 @@ npm run deploy:dryrun
 - **数据库**: Cloudflare D1 (SQLite)
 - **SRS**: [ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs) (FSRS v5)
 - **前端**: 原生 TypeScript + Vite 构建
-- **PWA**: Service Worker + Web App Manifest + Badge API
+- **PWA**: Service Worker + Web App Manifest + Badge API + 安装引导 / 更新提示 / 全局 toast
 - **LLM**: 兼容 OpenAI chat/completions 接口的任意服务
